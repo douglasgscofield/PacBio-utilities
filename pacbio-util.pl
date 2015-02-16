@@ -7,499 +7,162 @@ use File::Which;
 use Getopt::Long;
 use List::Util qw/sum/;
 
-my %paths = map { $_ => which($_) } ('samtools');
-die "samtools must be available" if not defined $path{samtools};
-
-my $o_reference;
+my $o_fasta;
 my $o_BAM;
 my $o_stdin;
 
-GetOptions(""          => \$stdin,
-           "fasta=s"   => \$o_reference,
-           "targets=s" => \$o_targets) or die "unknown option";
+my $o_mappingquality = 0;
+my $o_mincov = 0;
+my $o_minqual = 0;
+my $o_minqualcov = 0;
+my $o_variantsonly = 0;
+my $o_printbasesquals = 0;
+my $o_noposcheck = 0;
+my $o_help;
+my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
+my $o_indels = 1;
+my $o_indelmode = 1;
+my $o_indelfrac = 0.80;
+my $o_indeltoobig = 1000;
 
-open PILEUP, "$paths{samtools} mpileup -BQ0 -d 1000000 -L 1000000 -f $o_reference $o_BAM |";
+sub print_usage_and_exit($$);
+sub merge_pileup_columns($);
+sub indel_targets();
+sub target_apply();
 
-while (<PILEUP>) {
+################
+# main loop
+
+my $command = shift @ARGV;
+
+if ($command eq "indel-targets") {
+    indel_targets();
+} elsif ($command eq "target-apply") {
+    target_apply();
 }
 
-# 
+################
 
-my $in_file;
-my $seq_col = 0;
-my $pos_col = 1;
-my $ref_col = 2;
-my $cvg_col = 3;
-my $bas_col = 4;
-my $qua_col = 5;
-my $map_col = 6;
-my $opt_mappingquality = 0;
-my $opt_mincov = 0;
-my $opt_minqual = 0;
-my $opt_minqualcov = 0;
-my $opt_variantsonly = 0;
-my $opt_hetz = 0;
-my $opt_hetzminfreq = 0.1;
-my $opt_hetzcheck = 1;
-my $out_file; #  = $ARGV[10];
-my $opt_printbasesquals = 0;
-my $opt_noposcheck = 0;
-
-my $opt_stdio;
-my $opt_help;
-my $opt_noheader;
-my $opt_ignoreN = 0;
-my $opt_ploidy = 2;
-my $opt_consensus = 0;
-my $consensus_seq_name = "consensus_seq";
-my $consensus_seq = "";
-my $opt_consensusfasta = "";
-my $opt_fastagapchar = "n";
-my $opt_qual = 0;
-my $opt_qualcalc = "rms";
-my $opt_qualround = 1;
-my $opt_basequaloffset = 64; # by default, assume Phred+64 quality scores
-my $opt_indels = 0;
-my $opt_indelmode = 0;
-my $opt_fixedfrac = 0.8;
-my $opt_indelfrac = 0.05;
-
-my $usage = "
-NAME
-
-  pacbio-util.pl - PacBio utilities
-
-SYNOPSIS
-
-  pacbio-util.pl  [options]
-
-COMMANDS
-
-  indel-targets
-
-    -                        read input from stdin, write to stdout
-    -f FILE, --fasta FILE    read input from FILE, else from stdin
-    -t FILE, --targets FILE  write output to FILE, else to stdout
-    --mapping-quality        input has mapping quality column (samtools mpileup -s)
-    --no-header              do not print header on output
-    --base-qual-offset INT   offset of base quality ASCII value from 0 quality [default $opt_basequaloffset]
-
-    --ignore-N               do not produce output for positions with reference of N
-
-    --ploidy INT             ploidy of sample, currently ignored [default $opt_ploidy]
-
-    --no-pos-check           do not check positions for increase-by-1 consistency.  If a
-                             consensus FASTA file is being produced, this suppresses the 
-                             insertion of gaps in the output (--no-coord-check is a synonym)
-    --hetz                   determine heterozygous positions, applying all other options
-    --hetz-min-freq FLOAT    minimum frequency for heterozygous call at a site [default $opt_hetzminfreq]
-    --hetz-check             check that #alleles do not exceed ploidy, if so ignore it [default $opt_hetzcheck]
-                             this all would be better replaced with a model
-    --variants-only          print out only those positions containing variants from the 
-                             reference [default $opt_variantsonly]
-    --consensus              call consensus sequence from reads, adds two columns to output,
-                             one for consensus call, one for mean quality of call [default $opt_consensus]
-    --consensus-fasta FILE   print the consensus sequence in FASTA format to the given file
-    --fasta-gap-char CHAR    the character used for position-skipping gaps in the consensus
-                             FASTA file, gaps are also identified by position in the FASTA 
-                             header line [default $opt_fastagapchar]
-    --print-bases-quals      print out bases and base qualities from input mpileup
-                             [default $opt_printbasesquals]
-
-  Quality:
-
-    --mincov INT             minimum raw coverage to call a change to reference [default $opt_mincov]
-    --minqual INT            minimum base quality cutoff [default $opt_minqual]
-    --minqualcov INT         minimum coverage of quality bases to call a change to 
-                             reference [default $opt_minqualcov]
-    --qual                   print qualities of variants [default $opt_qual]
-    --qualcalc mean|rms|sum  method for calculating qualities of variants [default $opt_qualcalc]
-    --qualround INT          digit to which to round variant qualities [default $opt_qualround]
-
-  Indels:
-
-    --indels                 track the presence of indels [default $opt_indels]
-    --indel-frac FLOAT       do not report indels at a position if the fraction of 
-                             reads containing them is below FLOAT [default $opt_indelfrac]
-    --indel-mode             track ONLY the presence of indels [default $opt_indelmode]
-
-  SNP variants:
-
-    --fixed-frac FLOAT       minimum fraction of non-ref bases required to call a base as 
-                             fixed with respect to the reference [default $opt_fixedfrac]
-
-    --help, -?               help message
-
-";
-
-sub print_usage_and_exit($) {
+sub print_usage_and_exit($$) {
+    my $usage = shift;
     my $msg = shift;
     print "$msg\n" if $msg;
     print $usage;
     exit 0;
 }
 
-GetOptions(
-    "" => \$opt_stdio, 
-    "input|i=s" => \$in_file,
-    "output|o=s" => \$out_file,
-    "mapping-quality" => \$opt_mappingquality,
-    "no-header" => \$opt_noheader,
-    "base-qual-offset" => \$opt_basequaloffset,
-    "ignore-N" => \$opt_ignoreN,
-    "ploidy=i" => \$opt_ploidy,
-    "no-pos-check|no-coord-check" => \$opt_noposcheck,
-    "hetz" => \$opt_hetz,
-    "hetz-min-freq" => \$opt_hetzminfreq,
-    "hetz-check" => \$opt_hetzcheck,
-    "variants-only" => \$opt_variantsonly,
-    "consensus" => \$opt_consensus,
-    "consensus-fasta=s" => \$opt_consensusfasta,
-    "fasta-gap-char=s" => \$opt_fastagapchar,
-    "print-bases-quals" => \$opt_printbasesquals,
-    "mincov=i" => \$opt_mincov,
-    "minqual=i" => \$opt_minqual,
-    "minqualcov=i" => \$opt_minqualcov,
-    "qual" => \$opt_qual,
-    "qualcalc=s" => \$opt_qualcalc,
-    "qualround=i" => \$opt_qualround,
-    "indels" => \$opt_indels,
-    "indel-frac=f" => \$opt_indelfrac,
-    "indel-mode" => \$opt_indelmode,
-    "fixed-frac=f" => \$opt_fixedfrac,
-    "help|?" => \$opt_help,
-) or print_usage_and_exit("");
+################
 
-print_usage_and_exit("") if $opt_help;
-print_usage_and_exit("invalid value for option --qualcalc '$opt_qualcalc'") if $opt_qualcalc ne "mean" 
-    and $opt_qualcalc ne "rms"
-    and $opt_qualcalc ne "sum";
-print_usage_and_exit("invalid value for option --qualround '$opt_qualround', must be >= 0") if $opt_qualround < 0;
-print_usage_and_exit("invalid value for option --fixed-frac '$opt_fixedfrac', must be between 0 and 1") if $opt_fixedfrac < 0 or $opt_fixedfrac > 1;
-print_usage_and_exit("invalid value for option --indel-frac '$opt_indelfrac' must be between 0 and 1") if $opt_indelfrac < 0 or $opt_indelfrac > 1;
-print_usage_and_exit("--hetz must be specified with --ploidy of >= 2") if $opt_hetz and $opt_ploidy == 1;
-print_usage_and_exit("invalid value for option --hetz-min-freq '$opt_hetzminfreq' must be greater than 0 and less than 1") if $opt_hetzminfreq <= 0 or $opt_hetzminfreq >= 1;
-
-my $invalid_line_counter = 0;
-my $first_skipped_line = "";
-
-if ($opt_stdio or ! defined($in_file)) {
-    *IN = *STDIN;
-} else {
-    open (IN, "<$in_file") or die "Cannot open $in_file $!\n";
+sub merge_pileup_columns($) {
+    # each BAM has 4 columns: coverage, bases, quality, mapping quality
+    my $l = shift;
+    my ($cvg, $base, $qual, $mapqual) = ( 0, "", "", "" );
+    my $n_cols = scalar(@$l);
+    my $i = 3; # start at 4th column (coverage)
+    while ($i < $n_cols) {
+        if ($l->[$i] > 0) {  # coverage > 0, 4 columns
+            $cvg     += $l->[$i];
+            $base    .= $l->[$i + 1];
+            $qual    .= $l->[$i + 2];
+            $mapqual .= $l->[$i + 3];
+            $i += 4;
+        } else {  # no coverage here, 3 columns
+            $i += 3;
+        }
+    }
+    return ($l->[0], $l->[1], $l->[2], $cvg, $base, $qual, $mapqual);
 }
 
-if ($opt_stdio or ! defined($out_file)) {
-    *OUT = *STDOUT;
-} else {
-    open (OUT, ">$out_file") or die "Cannot open $out_file $!\n";
-}
+################
 
-if (! $opt_noheader) {
-    print OUT "seq\t";
-    print OUT "pos\t";
-    print OUT "ref\t";
-    print OUT "cvg\t";
-    if ($opt_indelmode) {
-        print OUT "iqual\tifreq\tilen\tioper\tn_var\n";
-    } else {
-        print OUT "bases\tquals\t" if $opt_printbasesquals;
-        if ($opt_hetz) {
-            print OUT "gt\tfreq\tqual\t";
-        } else {
-	    print OUT "A\tC\tG\tT\t";
+sub indel_targets() {
+    my $usage = "
+pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
+
+    -f FILE, --fasta FILE    PacBio assembly in Fasta format
+    FILE1.bam [ FILE2.bam ]  BAM files of reads mapped to
+
+    --base-qual-offset INT   offset of base quality ASCII value from 0 quality [default $o_basequaloffset]
+
+    --indel-frac FLOAT       do not report indels at a position if the fraction of 
+                             reads containing them is below FLOAT [default $o_indelfrac]
+    --indel-mode             track ONLY the presence of indels [default $o_indelmode]
+
+    --help, -?               help message
+
+";
+
+    GetOptions(""          => \$o_stdin,
+               "fasta=s"   => \$o_fasta
+    ) or print_usage_and_exit($usage, "unknown option");
+    my @BAM = grep { -f or die "cannot find BAM: $_" } @ARGV;
+    my $n_BAM = scalar(@BAM);
+
+    my $samtools = which('samtools') or die "$command: samtools not found";
+
+    my $samtools_pipe = "$samtools mpileup -s -BQ0 -d 1000000 -L 1000000 -f $o_fasta ".join(" ", @BAM)." |";
+    open PILEUP, $samtools_pipe or die "Could not initiate samtools pipe: $!";
+
+    while (<PILEUP>) {
+        next if m/^#/;
+        chomp;
+        my @l = split /\t/;
+        my ($ref, $pos, $refcall, $cvg, $base, $qual, $mapqual ) = merge_pileup_columns(\@l);
+        die "Coverage contains non-numeric values: $cvg" if not isdigit($cvg);
+        my $n_bases = length($base);
+        die "number of bases bases does not match number of base qualities" if $n_bases != length($qual);
+        die "number of bases bases does not match number of map qualities" if $n_bases != length($mapqual);
+        if ($refcall eq "*") {
+            print STDERR "skipping reference deletion '*', should this happen??\n";
+            next; # skip indel lines
         }
-        print OUT "qualA\tqualC\tqualG\tqualT\t" if $opt_qual;
-        print OUT "minqual\t" if $opt_minqual;
-        print OUT "n_var\t";
-        print OUT "cons\tcons_qual\t" if $opt_consensus;
-        print OUT "note\n";
-    }
-}
-
-my $prev_pos = -1;
-
-while (<IN>) {
-    chomp;
-    my $entire_line = $_;
-    next if m/^\#/;
-    my @fields = split /\t/;
-    my @output_fields = ();
-    use constant SNPs_zeroes => ('A' => 0, 'C' => 0, 'G' => 0, 'T' => 0);
-    my %SNPs = SNPs_zeroes;
-    my %SNPqual = SNPs_zeroes;
-    my %SNPqualsum = SNPs_zeroes;
-    my %SNPqualsumsq = SNPs_zeroes;
-    my $above_qv_bases = 0;
-    my $SNPs_exist = 0;
-    my $diff_count = 0;
-    my %indels = ();
-    my %indel_operations = ();
-    my %indel_lengths = ();
-    my $indel_in_reads = 0;
-    my $indel_del_reads = 0;
-    my $mincov_not_met = 0;
-    my $minqualcov_not_met = 0;
-    my $note = "";
-    if ($fields[ $ref_col ] eq "*") {
-        print "skipping deletion in reference '*'\n"; # if $opt_indels;
-        next; # skip indel lines
-    }
-    if ($opt_ignoreN and uc($fields[ $ref_col ]) eq "N") {
-        next;
-    }
-
-    my $reference_sequence_name = $fields[ $seq_col ];
-    push @output_fields, $reference_sequence_name;
-    push @output_fields, $fields[ $pos_col ];
-    push @output_fields, $fields[ $ref_col ];
-    push @output_fields, $fields[ $cvg_col ];
-    push @output_fields, $fields[ $bas_col ] if $opt_printbasesquals;
-    push @output_fields, $fields[ $qua_col ] if $opt_printbasesquals;
-
-    if (! $opt_noposcheck and $prev_pos >= 0 and ($prev_pos + 1) != $fields[ $pos_col ]) {
-        my $pos_gap = $fields[$pos_col] - $prev_pos - 1;
-	$note .= ", " if $note;
-	$note .= "pos $fields[$pos_col] out of sequence with prev $prev_pos, gap of $pos_gap";
-        if ($opt_consensusfasta and $pos_gap > 0) {  # insert a gap, if it is a gap
-            $consensus_seq .= $opt_fastagapchar x $pos_gap;
-            $consensus_seq_name .= "|gap[" . ($prev_pos+1) . "-" . ($fields[$pos_col]-1) . "]";
-        }
-	print STDERR "pos $fields[$pos_col] out of sequence with prev $prev_pos, gap of $pos_gap\n";
-    }
-
-    my $read_bases   = $fields[ $bas_col ];
-    die "Coverage column" . ($cvg_col+1) . " contains non-numeric values. Check your input parameters as well as format of input dataset." if ( not isdigit $fields[ $cvg_col ] );
-    $mincov_not_met = 1 if $fields[ $cvg_col ] < $opt_mincov;
-    my $base_quality = $fields[ $qua_col ];
-    if ($read_bases =~ m/[\$\^\+-]/) {
-        $read_bases =~ s/\^.//g; #removing the start of the read segement mark
-        $read_bases =~ s/\$//g; #removing end of the read segment mark
-        while ($read_bases =~ m/([\+-]){1}(\d+)/g) {
-            my $indel_type = $1;
-            my $indel_len = $2;
-            if ($indel_len > 1024) { # there is a problem with this indel field and probably this whole pileup line...
-                print STDERR "line $. skipped, invalid indel len $indel_len: line is '$entire_line'\n";
-                $first_skipped_line = $. if $first_skipped_line eq "";
-                ++$invalid_line_counter;
-                next;
-            }
-            $read_bases =~ s/([\+-]{1}$indel_len.{$indel_len})//; # remove indel info from read base field
-            my $indel_contents = $1;
-            ++$indels{"indel, $indel_type, $indel_len bases, $indel_contents"};
-            ++$indel_lengths{($indel_type eq "+" ? +$indel_len : -$indel_len)};
-            ++$indel_operations{uc($indel_contents)};
-            ++$indel_in_reads if $indel_type eq "+";
-            ++$indel_del_reads if $indel_type eq "-";
-        }
-    }
-
-    my $N_bases = length($read_bases);
-
-    my $indel_frac_pos = ($indel_in_reads + $indel_del_reads) / $N_bases;
-
-    if ($opt_indelmode) {
-        next if ! $indel_frac_pos;  # non-indels not needed
-        # @output_fields already has $reference_sequence_name,
-        # $fields[ $pos_col ], $fields[ $ref_col ], $fields[ $cvg_col ]
-        if ($indel_frac_pos >= $opt_indelfrac and scalar(keys %indel_lengths) == 1 
-            and scalar(keys %indel_operations) == 1) {
-            # above cutoff frequency and just one length and operation
-            push @output_fields, "good";
-        } else {
-            push @output_fields, "bad";
-        }
-        push @output_fields, (sprintf "%.4f", $indel_frac_pos);
-        push @output_fields, join(",", keys %indel_lengths);
-        push @output_fields, join(",", keys %indel_operations);
-        push @output_fields, $indel_in_reads + $indel_del_reads;
-    	print OUT join("\t", @output_fields), "\n";
-        next;  # no more is needed
-    }
-
-    if ( length($read_bases) != length($base_quality) ) {
-        $first_skipped_line = $. if $first_skipped_line eq "";
-        ++$invalid_line_counter;
-        next;
-    }
-    # after removing read block and indel data the length of read_base 
-    # field should identical to the length of base_quality field
-    
-    my @bases = split //, $read_bases;
-    my @qv    = split //, $base_quality;
-
-    for my $i ( 0 .. @bases - 1 ) {
-
-        my $this_base_qual = ord( $qv[ $i ] ) - $opt_basequaloffset;
-
-        if ( ! $opt_minqual or ($this_base_qual >= $opt_minqual and $bases[ $i ] ne '*')) {
-
-            ++$above_qv_bases;
-            
-            if ( $bases[ $i ] =~ m/[ATGC]/i ) {
-                $SNPs_exist = 1;    
-                $SNPs{ uc( $bases[ $i ] ) } += 1;
-                $SNPqualsum{ uc( $bases[ $i ] ) } += $this_base_qual;
-                $SNPqualsumsq{ uc( $bases[ $i ] ) } += ($this_base_qual * $this_base_qual);
-                $diff_count += 1;
-            } elsif ( $bases[ $i ] =~ m/[\.,]/ ) {
-                $SNPs{ uc( $fields[ $ref_col ] ) } += 1;
-                $SNPqualsum{ uc( $fields[ $ref_col ] ) } += $this_base_qual;
-                $SNPqualsumsq{ uc( $fields[ $ref_col ] ) } += ($this_base_qual * $this_base_qual);
-            }           
-
-        }
-    } 
-
-    $minqualcov_not_met = 1 if $above_qv_bases < $opt_minqualcov;
-    
-    if ($opt_hetz) { # print gt, minor-allele freq, qual columns
-
-        my $minor_allele = "";
-        my $minor_allele_freq = 1.1;  # always set the first time through
-        my @gt = ();  # genotypes other than the minor allele
-        my $gt_qual;  # simply look at the qualities of the bases, not ideal by any means
-
-        foreach my $SNP (sort keys %SNPs) {
-            my $SNP_freq = $above_qv_bases ? ($SNPs{$SNP} / $above_qv_bases) : 0;
-            if ($SNP_freq >= $opt_hetzminfreq) {  # it's acceptable
-                if ($SNP_freq < $minor_allele_freq) { # switch places
-                    push @gt, $minor_allele if $minor_allele ne "";
-                    $minor_allele = $SNP;
-                    $minor_allele_freq = $SNP_freq;
-                } else {
-                    push @gt, $SNP;
+        my %indels;
+        my %indel_ops;
+        my %indel_lengths;
+        my $in_reads = 0;
+        my $del_reads = 0;
+        my $mincvg_not_met = 1 if $cvg < $o_mincov;
+        my $minqualcvg_not_met = 0;
+        my $note = "";
+        if ($base =~ m/[\$\^\+-]/) {
+            $base =~ s/\^.//g; #removing the start of the read segement mark
+            $base =~ s/\$//g; #removing end of the read segment mark
+            while ($base =~ m/([\+-]){1}(\d+)/g) {
+                my $indel_type = $1;
+                my $indel_len = $2;
+                if ($indel_len > $o_indeltoobig) { # problem with pileup line?
+                    print STDERR "line $. indel too big, $indel_len\n";
+                    next;
                 }
+                $base =~ s/([\+-]{1}$indel_len.{$indel_len})//; # remove indel info from read base field
+                my $indel_contents = $1;
+                ++$indels{"indel, $indel_type, $indel_len bases, $indel_contents"};
+                ++$indel_lengths{($indel_type eq "+" ? +$indel_len : -$indel_len)};
+                ++$indel_ops{uc($indel_contents)};
+                ++$in_reads if $indel_type eq "+";
+                ++$del_reads if $indel_type eq "-";
             }
         }
-        push @gt, $minor_allele;  # add minor allele to end
+        next if $in_reads + $del_reads == 0;  # no indel
+        my $indel_frac_pos = ($in_reads + $del_reads) / $n_bases;
 
-        if ($above_qv_bases == 0 or $minqualcov_not_met or $mincov_not_met or ($opt_hetzcheck and scalar(@gt) > $opt_ploidy)) {
-            @gt = ( $fields[ $ref_col ] );  # force to reference, not ideal by any means
-            # still show frequency to be true frequency of reference allele
-            $minor_allele_freq = $above_qv_bases ? ($SNPs{$minor_allele} / $above_qv_bases) : 0;
-            $gt_qual = $above_qv_bases ? ($SNPs{$minor_allele} / $above_qv_bases) : 0;
-        } else {
-            if ($opt_qualcalc eq "sum") {
-               $gt_qual = sum(@SNPqualsum{@gt});
-            } elsif ($opt_qualcalc eq "mean") {
-               $gt_qual = sum(@SNPqualsum{@gt}) / sum(@SNPs{@gt});
-            } elsif ($opt_qualcalc eq "rms") {
-               $gt_qual = sqrt(sum(@SNPqualsumsq{@gt}) / sum(@SNPs{@gt}));
-            }
-        }
-
-        push @output_fields, join("/", @gt);
-        push @output_fields, (sprintf "%0.4f", $minor_allele_freq);
-        push @output_fields, (sprintf "%.${opt_qualround}f", $gt_qual);
-
-    } else { # print base counts instead
-
-        foreach my $SNP (sort keys %SNPs) {
-            push @output_fields, $SNPs{$SNP};
-        }
-
+        my @out;
+        push @out, ($ref, $pos, $refcall, $cvg, "indel-target");
+        push @out, ($indel_frac_pos >= $o_indelfrac and 
+                    scalar(keys %indel_lengths) == 1 and
+                    scalar(keys %indel_ops) == 1) ? "good" : "bad";
+        push @out, (sprintf "%.4f", $indel_frac_pos);
+        push @out, join(",", keys %indel_lengths);
+        push @out, join(",", keys %indel_ops);
+        push @out, $in_reads + $del_reads;
+    	print STDOUT join("\t", @out), "\n";
     }
-
-    foreach my $SNP (sort keys %SNPs) {
-        my $qualval;
-
-        if ($SNPs{$SNP} == 0) {
-           $qualval = 0;
-        } elsif ($opt_qualcalc eq "sum") {
-           $qualval = $SNPqualsum{$SNP};
-        } elsif ($opt_qualcalc eq "mean") {
-           $qualval = $SNPqualsum{$SNP} / $SNPs{$SNP};
-        } elsif ($opt_qualcalc eq "rms") {
-           $qualval = sqrt($SNPqualsumsq{$SNP} / $SNPs{$SNP});
-        }
-        $SNPqual{$SNP} = $qualval;
-        $qualval = sprintf "%.${opt_qualround}f", $qualval if $qualval != 0;
-
-        push @output_fields, $qualval if $opt_qual;
-    }
-    
-    push @output_fields, $above_qv_bases if $opt_minqual;
-    push @output_fields, $diff_count;
-
-    my $ref_base = uc( $fields[ $ref_col ] );
-    my $consensus_base = $ref_base;
-    my $consensus_qual =  $SNPqual{$ref_base};
-
-    if ($mincov_not_met or $minqualcov_not_met) {
-
-        # do not call a change to the reference
-
-        if ($mincov_not_met) {
-	    $note .= ", " if $note;
-            $note .= "below min coverage $opt_mincov";
-        }
-        if ($minqualcov_not_met) {
-	    $note .= ", " if $note;
-            $note .= "below min qual coverage $opt_minqualcov";
-        }
-
-    } else {
-
-        # check to see if consensus different from reference
-
-        foreach my $SNP (sort keys %SNPs) {
-            my $SNP_frac = $above_qv_bases ? ($SNPs{$SNP} / $above_qv_bases) : 0;
-            if ($SNP_frac >= $opt_fixedfrac and $SNP ne $ref_base) {
-                $consensus_base = $SNP;
-                $consensus_qual = $SNPqual{$SNP};
-	        $note .= ", " if $note;
-                $note .= ("fixed $ref_base -> $SNP (" . sprintf("%.3f", $SNP_frac) . ")");
-            }
-        }
-    }
-
-    # notes for each position
-
-    if ($indel_frac_pos >= $opt_indelfrac) {
-        $note .= ", " if $note;
-        $note .= "indel fraction";
-        $note .= " +" . sprintf("%.3f", $indel_in_reads / $N_bases) if ($indel_in_reads / $N_bases) > 0;
-        $note .= " -" . sprintf("%.3f", $indel_del_reads / $N_bases) if ($indel_del_reads / $N_bases) > 0;
-    }
-
-    # consensus columns
-
-    if ($opt_consensus) {
-	push @output_fields, $consensus_base;
-	push @output_fields, sprintf("%.${opt_qualround}f", $consensus_qual);
-    }
-    $consensus_seq .= $consensus_base if $opt_consensusfasta;
-
-    push @output_fields, $note if $note;
-
-    if (! $opt_variantsonly || ($opt_variantsonly && ($SNPs_exist || $indel_in_reads || $indel_del_reads))) {
-    	print OUT join("\t", @output_fields), "\n";
-
-    	if ($opt_indels and $indel_frac_pos >= $opt_indelfrac) {
-            foreach my $indel_msg (sort keys %indels) {
-                print $indel_msg, ", $indels{$indel_msg} times\n"; 
-	    }
-    	}
-    }
-
-    # end of iteration stuff
-
-    $prev_pos = $fields[$pos_col];
-    print STDERR "ref $reference_sequence_name pos $prev_pos        \r" if ! ($prev_pos % 100);
+    close PILEUP;
 }
 
-print "Skipped $invalid_line_counter invalid line(s) beginning with line $first_skipped_line\n" if $invalid_line_counter > 0;
+################
 
-if ($opt_consensusfasta) {
-    # I could redo this to peel off FASTA lines as sufficient length of consensus
-    # sequence is produced.  It could save a lot of memory.
-    open (FASTA, ">$opt_consensusfasta") or die "Cannot open $opt_consensusfasta $!\n";
-    print FASTA ">", $consensus_seq_name, "|length=", length($consensus_seq), "\n";
-    my $fasta_line_len = 72;
-    while (my $line = substr($consensus_seq, 0, $fasta_line_len, "")) {
-        print FASTA "$line\n";
-    }
-    close FASTA;
+sub target_apply() {
+    print STDERR "you've reached target_apply\n";
 }
 
