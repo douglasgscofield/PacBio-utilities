@@ -4,6 +4,8 @@ PacBio-utilities
 A collection of scripts useful for working with PacBio-based assemblies.  So
 far this collection means one script.
 
+**NOTE: This project has just started and does not yet do what it claims!**
+
 pacbio-util.pl
 --------------
 
