@@ -1,119 +1,29 @@
 #!/usr/bin/env perl
 
-# Call variants based on output of samtools mpileup command.
-#
-# Built upon the structure of the very useful Galaxy mpileup-format parser script
-# https://bitbucket.org/galaxy/galaxy-central/src/tip/tools/samtools/pileup_parser.pl.
-#
-# Douglas G. Scofield, Umeå Plant Sciences Centre, Umeå Sweden
-# douglas.scofield@plantphys.umu.se.  
-# douglasgscofield@gmail.com
-#
-# Input is **raw** mpileup output, via something like
-#
-#      samtools mpileup -BQ0 -d 1000000 -f $Reference -D $BAM -A
-#
-# This requests no read filtering, and includes anomalous base pairs (-A).  You might want to
-# drop that last one, based on the settings of BAM flags following your pipeline.
-#
-# The initial development of this script is for the calling of variants during 
-# reference-guided assembly of a chloroplast sequence.  Thus, my first interest
-# is uncovering *fixed differences* between the reference and the set of reads,
-# rather than finding high-confidence SNPs/SNVs that are easy to isolate against
-# a background of sequence variation.  Eventually I will extend this or write 
-# another script to handle SNP calling in pooled samples.
-#
-#
-# CHANGELOG
-#
-# 2012-11-29
-# - option name changes to bring them to my standard practices
-# - change naming of --no-pos-check option
-# - implement --variants-only option
-# 2012-02-27
-# - change flag variable $cvrg_cutoff to $mincov to match the command-line option
-# - change flag variable $quality_cutoff to $minqual to match the command-line option
-# - add flag -minqualcov and flag $minqualcov to impose a cutoff on the number of bases 
-#   that match the quality criterion
-# - for coordinates that do not meet $mincov or $minqualcov, create a full output line with 
-#   the base kept as the reference, and a note indicating that minimum coverage was not met.
-#   Previously the script would simply skip such positions
-#
-# 2012-02-23
-# - get rid of the original pileup_parser.pl's use of $out_string, use @output_fields
-#
-# 2012-02-22
-# - print gap in output FASTA if gap detected in coordinates, not done with -no_coord_check
-#
-# 2012-02-21
-# - print warning if coordinates are not monotonically increasing by 1 each line, add option
-#   -no_coord_check to suppress this
-#
-# 2012-02-20
-# - add option -filter_indel_frac <fraction> which does not report indels at a coordinate when
-#   the fraction of reads involved is below the given fraction
-# - add -consensus option to produce column of consensus sequence, currently only pays attention
-#   to -fixed_frac option
-# - change $SNPs_only to $variants_only
-# - various streamlinings of code
-#
-# 2012-02-17
-# - assign defaults for many of the columns based on samtools' mpileup format (as of samtools 0.1.18)
-#   coord_column = 1
-#   ref_base_column = 2
-#   cvrg_column = 3
-#   bas_col = 4
-#   base_quality_column = 5
-# - assign defaults for script behaviors
-#   quality_cutoff = 0, do not assign a quality cutoff when counting bases
-#   cvrg_cutoff = 0, do not exclude bases below a particular quality
-#   SNPs_only = "No", prints everything, including non-SNP coordinates
-#   bed = "No", do not convert coordinates to BED format
-#   total_diff removed, always print the column of total differences from the reference
-#   print_qual_bases = "No", do not print the base and quality columns
-# - use Getopt::Long and provide the following options
-#   -                      read from STDIN, write to STDOUT
-#   -in <string>           read from file, else STDIN
-#   -out <string>          write to file, else STDOUT
-#   -noheader              do not print header on output
-#   -ploidy <int>          assume pileup is derived from a sample having the given ploidy
-#   -fixed_frac <fraction> the minimum fraction of quality bases differing from the 
-#                          reference that are required to call a position as fixed
-#   -mincov <int>          minimum coverage cutoff 
-#   -minqual <int>         minimum quality cutoff to include a base
-#   -qual                  provide quality columns for each base
-#   -qualcalc <string>     method for calculating quality for each variant
-#   -qualround <int>       digit to which to round quality value
-#   -base_qual_offset <int>  offset of base quality
-#   -track_indels          track presence of indels
-#   -help|-?               help message
-# - indel recognition with -track_indels, print a message about each indel and its
-#   appearance in reads
-# - fixation of changes with -fixed_frac, print a note about each SNP above a given
-#   fractional representation, ex: "fixed A -> G (0.994)"
-#
-# TODO
-# problem calling heterozygotes!
-# MA_1    4667    C       85      .,t,,..TT.,T.t,.tT$tt,TttT.TT,.T.TT.TT.,,tTT,.,,tT,t.T.TTt,.,TTtt,T,.,.,,,,TT.tTt.TT,,  ce.ifg[46fi,h0ae.!..c0.05f..fa.e0.e!!efe04.gef^5.h:e!f/,/f^c,.1.e.eihiihfe04i,..g=-ff
-# MA_1    5528    T       77      .CCc,cC,C.C.c.,c^].C.,..,,C.,C,.CCCC,C..cCC.cCC,CC..C,.ccc,.C.,C,,.,C,Ccc.,.,,C R!3/g.4i1f.f4fd<E2ddeedf1fe2dc1111`;Rd/22c.21i41df.[d3.4ef2cf2iihc1h/0/hfadi/
-# 
-#
-# - handle mincov violations not by skipping, but by noting min coverage was not met
-#   and keeping reference base
-# - continue improving SNP quality calculations
-# - recognize beginnings/ends of reads and base memberships in reads
-# - recognize read mapping qualities
-# - handle excluding bases belonging to reads mapping below a certain quality
-# - allow an option to rescale base quality based on both mapping and call quality,
-#   like MAQ and others but with my own flavor
-# - improve indel reporting by tracking "net" indel depth across coordinates
-# 
-
 use strict;
 use warnings;
 use POSIX;
+use File::Which;
 use Getopt::Long;
 use List::Util qw/sum/;
+
+my %paths = map { $_ => which($_) } ('samtools');
+die "samtools must be available" if not defined $path{samtools};
+
+my $o_reference;
+my $o_BAM;
+my $o_stdin;
+
+GetOptions(""          => \$stdin,
+           "fasta=s"   => \$o_reference,
+           "targets=s" => \$o_targets) or die "unknown option";
+
+open PILEUP, "$paths{samtools} mpileup -BQ0 -d 1000000 -L 1000000 -f $o_reference $o_BAM |";
+
+while (<PILEUP>) {
+}
+
+# 
 
 my $in_file;
 my $seq_col = 0;
@@ -157,17 +67,19 @@ my $opt_indelfrac = 0.05;
 my $usage = "
 NAME
 
-  pileVar.pl - parse SAMtools mpileup format for variant information
+  pacbio-util.pl - PacBio utilities
 
 SYNOPSIS
 
-  pileVar.pl  [options]
+  pacbio-util.pl  [options]
 
-OPTIONS
+COMMANDS
+
+  indel-targets
 
     -                        read input from stdin, write to stdout
-    -i FILE, --input FILE    read input from FILE, else from stdin
-    -o FILE, --output FILE   write output to FILE, else to stdout
+    -f FILE, --fasta FILE    read input from FILE, else from stdin
+    -t FILE, --targets FILE  write output to FILE, else to stdout
     --mapping-quality        input has mapping quality column (samtools mpileup -s)
     --no-header              do not print header on output
     --base-qual-offset INT   offset of base quality ASCII value from 0 quality [default $opt_basequaloffset]
@@ -545,7 +457,7 @@ while (<IN>) {
     # notes for each position
 
     if ($indel_frac_pos >= $opt_indelfrac) {
-	$note .= ", " if $note;
+        $note .= ", " if $note;
         $note .= "indel fraction";
         $note .= " +" . sprintf("%.3f", $indel_in_reads / $N_bases) if ($indel_in_reads / $N_bases) > 0;
         $note .= " -" . sprintf("%.3f", $indel_del_reads / $N_bases) if ($indel_del_reads / $N_bases) > 0;
