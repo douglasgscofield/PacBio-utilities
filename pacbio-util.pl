@@ -84,7 +84,7 @@ sub indel_targets() {
     my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
     my $o_help = 0;
     my $o_samtools;
-    my $samtools = "samtools":
+    my $samtools = "samtools";
 
 
     my $usage = "
