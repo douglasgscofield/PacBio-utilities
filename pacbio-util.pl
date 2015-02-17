@@ -160,6 +160,7 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
     $samtools_args .= " -Q $min_basequal";
     # open samtools on a pipe
     my $samtools_pipe = "$samtools mpileup $samtools_args -f $o_fasta ".join(" ", @BAM)." |";
+    print STDERR "pipe: $samtools_pipe\n";
     open(PILEUP, $samtools_pipe) or die "Could not initiate samtools pipe: $!";
 
     print STDOUT "#assembly:$o_fasta\n";
@@ -202,7 +203,9 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
             }
             $n_bases = length($base);
             die "n bases $n_bases != number of base qualities" if $n_bases != length($qual);
-            die "n bases $n_bases != number of map qualities" if $n_bases != length($mapqual);
+            # below will not be correct when we are adding a new read ^I, mapping qualities wil
+            # contain the quality of the new read but the base and base qual fields will not
+            #die "n bases $n_bases != number of map qualities" if $n_bases != length($mapqual);
         }
         my $indel_reads = $in_reads + $del_reads;
         next if $indel_reads == 0;  # no indel
