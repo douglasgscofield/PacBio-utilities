@@ -19,12 +19,6 @@ my $o_variantsonly = 0;
 my $o_printbasesquals = 0;
 my $o_noposcheck = 0;
 my $o_help;
-my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
-my $o_indels = 1;
-my $o_indelmode = 1;
-my $o_indelfrac = 0.80;
-my $o_indeltoobig = 1000;
-
 sub print_usage_and_exit($$);
 sub merge_pileup_columns($);
 sub indel_targets();
@@ -33,9 +27,15 @@ sub indel_apply();
 ################
 # main loop
 
+my %command_values = ( "indel-targets" => "indel-targets",
+                       "indel-apply" => "indel-apply");
 my $command = shift @ARGV;
 
-if ($command eq "indel-targets") {
+if (not defined $command or not defined $command_values{$command}) {
+    print STDERR "$0 indel-targets ...\n";
+    print STDERR "$0 indel-apply ...\n";
+    exit 0;
+} elsif ($command eq "indel-targets") {
     indel_targets();
 } elsif ($command eq "indel-apply") {
     indel_apply();
@@ -76,28 +76,49 @@ sub merge_pileup_columns($) {
 ################
 
 sub indel_targets() {
+    my $o_fasta;
+    my $o_stdin;
+    my $o_indelfrac = 0.80;
+    my $o_indelmincov = 5;
+    my $o_includebadindels = 0;
+    my $o_maxindelsize = 1000;
+    my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
+    my $o_help = 0;
+
+
     my $usage = "
 pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
 
     -f FILE, --fasta FILE    PacBio assembly in Fasta format
+
     FILE1.bam [ FILE2.bam ]  BAM files of reads mapped to
 
-    --base-qual-offset INT   offset of base quality ASCII value from 0 quality [default $o_basequaloffset]
+    -                        Read pileup from stdin rather than running samtools
 
     --indel-frac FLOAT       do not report indels at a position if the fraction of 
                              reads containing them is below FLOAT [default $o_indelfrac]
-    --indel-mode             track ONLY the presence of indels [default $o_indelmode]
+    --indel-min-cov INT      Minimum read coverage to consider an indel [default $o_indelmincov]
+    --include-bad-indels     Include indels in target set that do not pass our criteria,
+                             these lines are marked with 'bad' in the sixth column
+    --max-indel-size INT     Maximum indel size to accept, beyond this the position is
+                             considered in error [default $o_maxindelsize]
+    --base-qual-offset INT   Offset of base quality ASCII value from 0 quality [default $o_basequaloffset]
 
     --help, -?               help message
 
 ";
 
-    my $o_fasta;
-    my $o_stdin;
-
-    GetOptions(""          => \$o_stdin,
-               "fasta=s"   => \$o_fasta
+    print_usage_and_exit($usage, "") if not @ARGV;
+    GetOptions(""                   => \$o_stdin,
+               "fasta=s"            => \$o_fasta,
+               "indel-frac=f"       => \$o_indelfrac,
+               "indel-min-cov=i"    => \$o_indelmincov,
+               "include-bad-indels" => \$o_includebadindels,
+               "max-indel-size=i"   => \$o_maxindelsize,
+               "base-qual-offset=i" => \$o_basequaloffset,
+               "help|?"             => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
+    print_usage_and_exit($usage, "") if $o_help;
     my @BAM = grep { -f or die "cannot find BAM: $_" } @ARGV;
     my $n_BAM = scalar(@BAM);
 
@@ -114,9 +135,6 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
         my @l = split /\t/;
         my ($ref, $pos, $refcall, $cvg, $base, $qual, $mapqual ) = merge_pileup_columns(\@l);
         die "Coverage contains non-numeric values: $cvg" if not isdigit($cvg);
-        my $n_bases = length($base);
-        die "number of bases bases does not match number of base qualities" if $n_bases != length($qual);
-        die "number of bases bases does not match number of map qualities" if $n_bases != length($mapqual);
         if ($refcall eq "*") {
             print STDERR "skipping reference deletion '*', should this happen??\n";
             next; # skip indel lines
@@ -128,14 +146,14 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
         my $del_reads = 0;
         my $mincvg_not_met = 1 if $cvg < $o_mincov;
         my $minqualcvg_not_met = 0;
-        my $note = "";
+        my $n_bases;
         if ($base =~ m/[\$\^\+-]/) {
             $base =~ s/\^.//g; #removing the start of the read segement mark
             $base =~ s/\$//g; #removing end of the read segment mark
             while ($base =~ m/([\+-]){1}(\d+)/g) {
                 my $indel_type = $1;
                 my $indel_len = $2;
-                if ($indel_len > $o_indeltoobig) { # problem with pileup line?
+                if ($indel_len > $o_maxindelsize) { # problem with pileup line?
                     print STDERR "line $. indel too big, $indel_len\n";
                     next;
                 }
@@ -147,15 +165,22 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
                 ++$in_reads if $indel_type eq "+";
                 ++$del_reads if $indel_type eq "-";
             }
+            $n_bases = length($base);
+            die "n bases $n_bases != number of base qualities" if $n_bases != length($qual);
+            die "n bases $n_bases != number of map qualities" if $n_bases != length($mapqual);
         }
-        next if $in_reads + $del_reads == 0;  # no indel
-        my $indel_frac_pos = ($in_reads + $del_reads) / $n_bases;
+        my $indel_reads = $in_reads + $del_reads;
+        next if $indel_reads == 0;  # no indel
+        my $indel_frac_pos = $indel_reads / $n_bases;
+        my $indel_qual = ($indel_frac_pos >= $o_indelfrac and 
+                          $indel_reads >= $o_indelmincov and
+                          scalar(keys %indel_lengths) == 1 and
+                          scalar(keys %indel_ops) == 1) ? "good" : "bad";
 
+        next if not $o_includebadindels and $indel_qual eq "bad";
         my @out;
         push @out, ($ref, $pos, $refcall, $cvg, "indel-target");
-        push @out, ($indel_frac_pos >= $o_indelfrac and 
-                    scalar(keys %indel_lengths) == 1 and
-                    scalar(keys %indel_ops) == 1) ? "good" : "bad";
+        push @out, $indel_qual;
         push @out, (sprintf "%.4f", $indel_frac_pos);
         push @out, join(",", keys %indel_lengths);
         push @out, join(",", keys %indel_ops);
@@ -183,20 +208,21 @@ and targets in TARGETS must be the same.
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for
-                             '@0 indel-targets -f FILE ...'
+                             '$0 indel-targets -f FILE ...'
     -t | --targets TARGETS   List of indel targets to apply, output from
-                             '@0 indel-targets -f FILE ...'
+                             '$0 indel-targets -f FILE ...'
 
     --help, -?               help message
 
 ";
 
-    # options for 
+    # options for ...
 
     my $o_fasta;
     my $o_targets;
     my $o_stdin;
 
+    print_usage_and_exit($usage, "") if not @ARGV;
     GetOptions(""          => \$o_stdin,
                "fasta=s"   => \$o_fasta,
                "targets=s" => \$o_targets
@@ -204,7 +230,7 @@ and targets in TARGETS must be the same.
 
     open(TARGETS, "<$o_targets") or die "Could not open targets file '$o_targets': $!";
     my $target_assembly = <TARGETS>;  # first line is '#assembly:filename'
-    die "First line of '$o_targets' does not contain assembly filename" if $target_ref !~ m/^#assembly:/;
+    die "First line of '$o_targets' does not contain assembly filename" if $target_assembly !~ m/^#assembly:/;
     chomp $target_assembly;
     $target_assembly = substr($target_assembly, 10);  # remove #assembly:
     if (not defined $o_fasta) {
