@@ -55,6 +55,9 @@ sub print_usage_and_exit($$) {
 my $do_merge = 0;
 sub merge_pileup_columns($) {
     # each BAM has 4 columns: coverage, bases, quality, mapping quality
+    # if coverage is 0 *and* the next two are '*', then there are only
+    # three columns.  if the *and* is not true, then reads have been
+    # removed because of flags, and there are 4 columns of output
     my $l = shift;
     my ($cvg, $base, $qual, $mapqual) = ( 0, "", "", "" );
     my ($n_cols, $n_bams) = ( scalar(@$l), 0 );
@@ -66,8 +69,10 @@ sub merge_pileup_columns($) {
             $qual    .= $l->[$i + 2];
             $mapqual .= $l->[$i + 3];
             $i += 4;
-        } else {  # no coverage here, 3 columns
+        } elsif ($l->[$i] == 0 and $l->[$i + 1] eq '*' and $l->[$i + 2] eq '*') {  # coverage 0, 3 columns
             $i += 3;
+        } else {  # coverage 0 but 4 columns
+            $i += 4;
         }
         ++$n_bams;
     }
