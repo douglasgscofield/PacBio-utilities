@@ -52,11 +52,12 @@ sub print_usage_and_exit($$) {
 
 ################
 
+my $do_merge = 0;
 sub merge_pileup_columns($) {
     # each BAM has 4 columns: coverage, bases, quality, mapping quality
     my $l = shift;
     my ($cvg, $base, $qual, $mapqual) = ( 0, "", "", "" );
-    my $n_cols = scalar(@$l);
+    my ($n_cols, $n_bams) = ( scalar(@$l), 0 );
     my $i = 3; # start at 4th column (coverage)
     while ($i < $n_cols) {
         if ($l->[$i] > 0) {  # coverage > 0, 4 columns
@@ -68,6 +69,11 @@ sub merge_pileup_columns($) {
         } else {  # no coverage here, 3 columns
             $i += 3;
         }
+        ++$n_bams;
+    }
+    if (not $do_merge) {
+        print STDERR "Merging columns from $n_bams BAM files ...\n";
+        $do_merge = 1;
     }
     return ($l->[0], $l->[1], $l->[2], $cvg, $base, $qual, $mapqual);
 }
@@ -84,6 +90,11 @@ sub indel_targets() {
     my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
     my $o_help = 0;
     my $o_samtools;
+    my $o_allreads;
+    my $min_mapqual = 1;
+    my $min_basequal = 13;
+    my $samtools_filterflags = "--ff ".(256 + 1024);  # not primary, is duplicate
+    my $o_allbases;
     my $samtools = "samtools";
 
 
@@ -105,6 +116,11 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
                              considered in error [default $o_maxindelsize]
     --base-qual-offset INT   Offset of base quality ASCII value from 0 quality [default $o_basequaloffset]
     --samtools FILE          Location of samtools executable [default $samtools]
+    --all-reads              Include all reads.  Default is to exclude multiply-mapped
+                             reads (mapQ 0), alignments that are not the primary (SAM
+                             flag 256), and duplicate alignments (flag 1024).
+    --all-bases              Include all bases.  Default is to exclude bases below
+                             quality 13.
 
     --help, -?               help message
 
@@ -119,13 +135,15 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
                "max-indel-size=i"   => \$o_maxindelsize,
                "base-qual-offset=i" => \$o_basequaloffset,
                "samtools=s"         => \$o_samtools,
+               "all-reads"          => \$o_allreads,
+               "all-bases"          => \$o_allbases,
                "help|?"             => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
     print_usage_and_exit($usage, "") if $o_help;
     my @BAM = grep { -f or die "cannot find BAM: $_" } @ARGV;
     my $n_BAM = scalar(@BAM);
 
-    # find samtools, open a pipe
+    # find samtools
     if ($o_samtools) {
         die "cannot execute '$o_samtools'" if not -x $o_samtools;
         $samtools = $o_samtools;
@@ -133,7 +151,15 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
         my $t = qx/$samtools 2>&1/;
         die "cannot execute '$samtools'" if not defined $t;
     }
-    my $samtools_pipe = "$samtools mpileup -s -BQ0 -d 1000000 -L 1000000 -f $o_fasta ".join(" ", @BAM)." |";
+    # set up samtools argument list
+    my $samtools_args = "-s -B -d 10000 -L 10000";
+    $samtools_args .= " $samtools_filterflags" if not $o_allreads;
+    $min_mapqual = 0 if $o_allreads;
+    $samtools_args .= " -q $min_mapqual";
+    $min_basequal = 0 if $o_allbases;
+    $samtools_args .= " -Q $min_basequal";
+    # open samtools on a pipe
+    my $samtools_pipe = "$samtools mpileup $samtools_args -f $o_fasta ".join(" ", @BAM)." |";
     open(PILEUP, $samtools_pipe) or die "Could not initiate samtools pipe: $!";
 
     print STDOUT "#assembly:$o_fasta\n";
