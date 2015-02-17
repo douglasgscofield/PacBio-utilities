@@ -4,7 +4,6 @@ use strict;
 use warnings;
 # base modules
 use POSIX;
-use File::Which;
 use Getopt::Long;
 use List::Util qw/sum/;
 # BioPerl modules
@@ -84,6 +83,8 @@ sub indel_targets() {
     my $o_maxindelsize = 1000;
     my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
     my $o_help = 0;
+    my $o_samtools;
+    my $samtools = "samtools":
 
 
     my $usage = "
@@ -103,6 +104,7 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
     --max-indel-size INT     Maximum indel size to accept, beyond this the position is
                              considered in error [default $o_maxindelsize]
     --base-qual-offset INT   Offset of base quality ASCII value from 0 quality [default $o_basequaloffset]
+    --samtools FILE          Location of samtools executable [default $samtools]
 
     --help, -?               help message
 
@@ -116,14 +118,21 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
                "include-bad-indels" => \$o_includebadindels,
                "max-indel-size=i"   => \$o_maxindelsize,
                "base-qual-offset=i" => \$o_basequaloffset,
+               "samtools=s"         => \$o_samtools,
                "help|?"             => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
     print_usage_and_exit($usage, "") if $o_help;
     my @BAM = grep { -f or die "cannot find BAM: $_" } @ARGV;
     my $n_BAM = scalar(@BAM);
 
-    my $samtools = which('samtools') or die "$command: samtools not found";
-
+    # find samtools, open a pipe
+    if ($o_samtools) {
+        die "cannot execute '$o_samtools'" if not -x $o_samtools;
+        $samtools = $o_samtools;
+    } else {
+        my $t = qx/$samtools 2>&1/;
+        die "cannot execute '$samtools'" if not defined $t;
+    }
     my $samtools_pipe = "$samtools mpileup -s -BQ0 -d 1000000 -L 1000000 -f $o_fasta ".join(" ", @BAM)." |";
     open(PILEUP, $samtools_pipe) or die "Could not initiate samtools pipe: $!";
 
