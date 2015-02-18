@@ -294,10 +294,10 @@ OPTIONS
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for
-                             '$0 indel-targets -f FILE ...'.
+                             '$0 indel-targets'.
                              If the assembly is not specified, it is determined
                              from the first line of the target list.
-    -t | --targets TARGETS   List of indel targets to apply, output from
+    -t | --targets TARGETS   List of indel targets to apply, standard output from
                              '$0 indel-targets -f FILE ...'
                              If no targets are specified, they are read from stdin.
 

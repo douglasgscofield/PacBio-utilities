@@ -218,11 +218,11 @@ OPTIONS
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for
-                             './pacbio-util indel-targets -f FILE ...'.
+                             'pacbio-util indel-targets.
                              If the assembly is not specified, it is determined
                              from the first line of the target list.
-    -t | --targets TARGETS   List of indel targets to apply, output from
-                             './pacbio-util indel-targets -f FILE ...'
+    -t | --targets TARGETS   List of indel targets to apply, standard output from
+                             'pacbio-util indel-targets -f FILE ...'
                              If no targets are specified, they are read from stdin.
 
     --include-bad-indels     Apply indels in target set that are marked 'bad'
