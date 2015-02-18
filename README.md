@@ -19,18 +19,24 @@ in 10kbp.  Single-base insertions and longer insertions may occur but are much
 rarer.
 
 There are three steps to applying this correction.  First, map a set of
-Illumina reads to the PacBio assembly.  These reads should be from the same
+Illumina reads to the PacBio assembly to generate sorted BAM file(s).  Reads
+from multiple BAMs will be combined.  These reads should be from the same
 individual/strain from which the assembly was created.  Reads from other
 sequencing technologies, or from another individual/strain, will reduce the
-effectiveness of the correction and may introduce further errors.
+effectiveness of the correction and may introduce further errors.  In all
+subsequent steps it is required that the order of the sequences in the assembly
+and the BAMs is identical.
 
 Second, use the `pacbio-util` script here to generate a set of indel targets
 for correction.  The command is `pacbio-util indel-targets`, and the criteria
-for determining targets modified via options.
+for determining targets may be modified via options.  Use the `-h` option to
+see available options and current defaults.
 
 The third and final step is to use the command `pacbio-util indel-apply` to
 apply the targets generated in the second step to the assembly to create a
-corrected assembly.
+corrected assembly.  Options may also be used here to restrict the set of
+targets applied; use the `-h` option to see available options and current
+defaults.
 
 For an assembly `pacbio_assembly.fasta`, and mappings of Illumina paired-end
 and single-end reads to this assembly in BAM files `pe.sorted.bam` and
@@ -62,7 +68,7 @@ pacbio-util indel-targets: 1281 targets generated for assembly pacbio_assembly.f
 ~~~~
 
 Scaffold | bp before | bp after
--- | -- | --
+---- | ---- | ----
 unitig_1 | 6250549 | 6250752
 unitig_10 | 1811588 | 1811655
 unitig_7 | 15299 | 15299
@@ -98,12 +104,18 @@ unitig_4 | 19898 | 19898
 
 ### `pacbio-util indel-targets`
 
-Generate indel targets for correction and summaries of their occurrence.  Uses
-[`samtools mpileup`][samtools] for indel detection.  Targets are written to
-standard output.
+Generate indel targets for correction.  Uses [`samtools mpileup`][samtools] for
+indel detection.  Targets are written to standard output.
+
+Targets will only be generated where all read mappings containing an indel
+agree on the size and sequence of the indel.  Further criteria for minimum
+indel fraction, minimum coverage, and maximum indel size may be adjusted via
+options.
 
 ~~~~
 pacbio-util indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
+
+OPTIONS
 
     -f FILE, --fasta FILE    PacBio assembly in Fasta format
 
@@ -131,7 +143,14 @@ pacbio-util indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
 
 ~~~~
 
-An example subset of targets generated in this step:
+Below is an example subset of targets generated with this command.  The first
+line of the targets output is the name of the assembly Fasta file against which
+the targets were generated.  Following that, the columns are scaffold name,
+target position, reference base, total read coverage, type of target (always
+`indel` for this command), whether the target passed quality criteria (`good`
+or `bad`), the frequency of coverage supporting the indel, the size of the
+indel (positive for insertion, negative for deletion), a string describing the
+indel size and sequence, and the number of reads supporting the indel.
 
 ~~~~
 #assembly:pacbio_assembly.fasta
@@ -165,14 +184,15 @@ unitig_1	373159	C	113	indel	good	0.9469	1	+1A	107
 
 ### `pacbio-util indel-apply`
 
-Apply targets to correct PacBio assembly.  The assembly is written to standard
-output.
+Apply indel targets to correct an assembly.  The corrected assembly is written
+to standard output.  The order of sequences in the assembly and targets must be
+the same.
+
 
 ~~~~
 pacbio-util indel-apply [ -f FASTA ] [ -t TARGETS ]
 
-Correct indels within FASTA by applying TARGETS.  The order of sequences in FASTA
-and targets in TARGETS must be the same.
+OPTIONS
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for

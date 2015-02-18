@@ -101,6 +101,25 @@ sub indel_targets() {
     my $usage = "
 $0 indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
 
+Generate indel targets for correction.  Uses samtools for indel detection.
+Targets are written to standard output.
+
+Targets will only be generated where all read mappings containing an indel
+agree on the size and sequence of the indel.  Further criteria for minimum
+indel fraction, minimum coverage, and maximum indel size may be adjusted via
+options.
+
+The first line of the targets output is the name of the assembly Fasta file
+against which the targets were generated.  Following that, the columns are
+scaffold name, target position, reference base, total read coverage, type of
+target (always 'indel' for this command), whether the target passed quality
+criteria (`good` or `bad`), the frequency of coverage supporting the indel, the
+size of the indel (positive for insertion, negative for deletion), a string
+describing the indel size and sequence, and the number of reads supporting the
+indel.
+
+OPTIONS
+
     -f FILE, --fasta FILE    PacBio assembly in Fasta format
 
     FILE1.bam [ FILE2.bam ]  BAM files of reads mapped to
@@ -267,8 +286,11 @@ sub indel_apply() {
     my $usage = "
 $0 indel-apply [ -f FASTA ] [ -t TARGETS ]
 
-Correct indels within FASTA by applying TARGETS.  The order of sequences in FASTA
-and targets in TARGETS must be the same.
+Apply indel targets to correct an assembly.  The corrected assembly is written
+to standard output.  The order of sequences in the assembly and targets must be
+the same.
+
+OPTIONS
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for
