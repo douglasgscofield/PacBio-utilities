@@ -1,10 +1,9 @@
 TODO
 ====
 
-o Use Bio::DB::Sam?  This may not be any faster, though, plus not all implementations compile it correctly.
-o Should I include the pieces of BioPerl I use?
-o In Perl, how do I get a list of the exact modules I use, to help with the above?
+o Should I include the pieces of BioPerl I use? How do I get a list of the exact modules I use, to help with the above?
 o Combine indel-targets and indel-apply?
+x Decided (for now) not to use Bio::DB::Sam or another interface.
 x We use BioPerl
 x Consider embedding assembly filename in the targets file as the first line, behind #
 x Convert pileVar.pl to pacbio-util

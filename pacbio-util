@@ -1,11 +1,17 @@
 #!/usr/bin/env perl
 
+# Copyright (c) 2015 Douglas G. Scofield, Uppsala University
+# douglasgscofield@gmail.com
+#
+# No warranty is implied or assumed by this code.  Covered by
+# the Gnu General Public License v2.  See LICENSE.
+#
+# Please send bugs, suggestions etc.
+
 use strict;
 use warnings;
 # base modules
-use POSIX;
 use Getopt::Long;
-use List::Util qw/sum/;
 # BioPerl modules
 use Bio::Seq;
 use Bio::SeqIO;
@@ -87,7 +93,8 @@ sub indel_targets() {
     my $o_indelmincov = 10;
     my $o_includebadindels = 0;
     my $o_maxindelsize = 1000;
-    my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
+    my $o_mappingquality = 0;
+    my $mapQ_base = 33;
     my $o_help = 0;
     my $o_samtools;
     my $o_allreads;
@@ -124,23 +131,32 @@ OPTIONS
 
     FILE1.bam [ FILE2.bam ]  BAM files of reads mapped to
 
-    -                        Read mpileup from stdin rather than running samtools.
-                             Note that mapping qualities (option `-s`) are expected
-                             in the mpileup input.
+    -                        Read mpileup from stdin rather than running
+                             samtools. Note that mapping qualities
+                             (option `-s`) are expected in the mpileup input.
 
-    --indel-frac FLOAT       Do not report indels at a position if the fraction of 
-                             reads containing them is below FLOAT [default $o_indelfrac]
-    --indel-min-cov INT      Minimum read coverage to consider an indel [default $o_indelmincov]
-    --include-bad-indels     Include indels in target set that do not pass our criteria,
-                             these lines are marked 'bad' in the sixth column
-    --max-indel-size INT     Maximum indel size to accept, beyond this the position is
-                             considered in error [default $o_maxindelsize]
-    --all-reads              Include all reads.  Default is to exclude multiply-mapped
-                             reads (mapQ < $min_mapqual), alignments that are not the primary
-                             (SAM flag 256), and duplicate alignments (flag 1024).
-    --all-bases              Include all bases.  Default is to exclude bases below
-                             quality $min_basequal.
-    --samtools FILE          Location of samtools executable [default $samtools]
+    --indel-frac FLOAT       Do not report indels at a position if the
+                             fraction of reads containing them is below FLOAT
+                             [default $o_indelfrac]
+    --indel-min-cov INT      Minimum read coverage to consider an indel
+                             [default $o_indelmincov]
+    --include-bad-indels     Include indels in target set that do not pass
+                             our criteria, these lines are marked 'bad' in
+                             the sixth column
+    --max-indel-size INT     Maximum indel size to accept, beyond this the
+                             position is considered in error [default $o_maxindelsize]
+    --mapping-quality FLOAT  Minimum mean mapping quality of reads covering a
+                             target site. Note that a value of 0 means no
+                             minimum applied; reads with 0 mapQ are still
+                             excluded by default (see --all-reads) [default $o_mappingquality]
+    --all-reads              Include all reads.  Default is to exclude
+                             multiply-mapped reads (mapQ < $min_mapqual), alignments
+                             that are not the primary (SAM flag 256), and
+                             duplicate alignments (flag 1024).
+    --all-bases              Include all bases.  Default is to exclude bases
+                             below quality $min_basequal.
+    --samtools FILE          Location of samtools executable
+                             [default $samtools]
 
     --verbose                Print informational messages
     --help, -?               help message
@@ -153,8 +169,8 @@ OPTIONS
                "indel-frac=f"       => \$o_indelfrac,
                "indel-min-cov=i"    => \$o_indelmincov,
                "include-bad-indels" => \$o_includebadindels,
+               "mapping-quality=f"  => \$o_mappingquality,
                "max-indel-size=i"   => \$o_maxindelsize,
-               "base-qual-offset=i" => \$o_basequaloffset,
                "all-reads"          => \$o_allreads,
                "all-bases"          => \$o_allbases,
                "samtools=s"         => \$o_samtools,
@@ -192,7 +208,7 @@ OPTIONS
         next if m/^#/;
         chomp;
         my @l = split /\t/;
-        my ($ref, $pos, $refcall, $cvg, $base, $qual, $mapqual ) = merge_pileup_columns(\@l);
+        my ($ref, $pos, $refcall, $cvg, $base, $qual, $mapqual) = merge_pileup_columns(\@l);
         die "Coverage contains non-numeric values: $cvg" if not isdigit($cvg);
         if ($refcall eq "*") {
             print STDERR "skipping reference deletion '*', should this happen??\n";
@@ -226,14 +242,16 @@ OPTIONS
             }
             $n_bases = length($base);
             die "n bases $n_bases != number of base qualities" if $n_bases != length($qual);
-            # below will not be correct when we are adding a new read ^I, mapping qualities wil
-            # contain the quality of the new read but the base and base qual fields will not
-            #die "n bases $n_bases != number of map qualities" if $n_bases != length($mapqual);
+            if ($o_mappingquality > 0) { # filter on mean mapping quality
+                my $qsum = 0;
+                map { $qsum += (ord($_) - $mapQ_base) } split //, $mapqual;
+                next if ($qsum / length($mapqual)) < $o_mappingquality;
+            }
         }
         my $indel_reads = $in_reads + $del_reads;
         next if $indel_reads == 0;  # no indel
         my $indel_frac_pos = $indel_reads / $n_bases;
-        my $indel_qual = ($indel_frac_pos >= $o_indelfrac and 
+        my $indel_qual = ($indel_frac_pos >= $o_indelfrac and
                           $indel_reads >= $o_indelmincov and
                           scalar(keys %indel_lengths) == 1 and
                           scalar(keys %indel_ops) == 1) ? "good" : "bad";
@@ -249,21 +267,11 @@ OPTIONS
         ++$n_targets;
     	print STDOUT join("\t", @out), "\n";
     }
-    print STDERR "$0 $command: $n_targets targets generated for assembly $o_fasta\n" if $o_verbose;
+    print STDERR "$0 $command: $n_targets targets generated for assembly '$o_fasta'\n" if $o_verbose;
     close PILEUP;
 }
 
 ################
-# TODO: apparently these indels start at the position just after the
-#       indicated position, so this is correct:
-#
-#           $sequence .= $seq->subseq($seq_start, $l[1]);
-#           $seq_start = $l[1] + 1;
-#
-#       and not this:
-#
-#           $sequence .= $seq->subseq($seq_start, $l[1] - 1);
-#           $seq_start = $l[1];
 
 sub advance_to_seq($$$);
 
@@ -297,18 +305,20 @@ OPTIONS
                              '$0 indel-targets'.
                              If the assembly is not specified, it is determined
                              from the first line of the target list.
-    -t | --targets TARGETS   List of indel targets to apply, standard output from
-                             '$0 indel-targets -f FILE ...'
-                             If no targets are specified, they are read from stdin.
+    -t | --targets TARGETS   List of indel targets to apply, standard output
+                             from '$0 indel-targets -f FILE ...'.  If no
+                             targets are specified, they are read from stdin.
 
     --include-bad-indels     Apply indels in target set that are marked 'bad'
     --max-indel-size INT     Maximum indel size to apply [default $o_maxindelsize]
-    --min-indel-frac FLOAT   Minimim indel fraction to apply, a value of 0 means
-                             apply all indels in target set [default $o_minindelfrac]
-    --skip-deletion-verify   Do not verify that a deletion matches the sequence at
-                             that position in the assembly [default $o_skipdeletionverify]
+    --min-indel-frac FLOAT   Minimim indel fraction to apply, a value of 0
+                             means apply all indels in target set [default $o_minindelfrac]
+    --skip-deletion-verify   Do not verify that a deletion matches the
+                             sequence at that position in the assembly
+                             [default $o_skipdeletionverify]
     --skip-softmasked        Do not apply targets to softmasked regions of the
-                             assembly, as determined by use of lowercase [default $o_skipsoftmasked]
+                             assembly, as determined by use of lowercase
+                             [default $o_skipsoftmasked]
 
     --verbose                Print informational messages
     --help, -?               help message
@@ -343,9 +353,9 @@ OPTIONS
     } elsif ($o_fasta ne $target_assembly) {
         print STDERR "\n$0 $command: *** Warning: -f and target assembly do not match\n\n";
     }
-    my $IN = Bio::SeqIO->new(-file => "<$o_fasta", -format => "fasta") or 
+    my $IN = Bio::SeqIO->new(-file => "<$o_fasta", -format => "fasta") or
                        die "Could not open assembly file '$o_fasta': $!";
-    my $OUT = Bio::SeqIO->new(-fh => \*STDOUT, -format => "fasta") or 
+    my $OUT = Bio::SeqIO->new(-fh => \*STDOUT, -format => "fasta") or
                        die "Could not open output: $!";
 
     my $seq = $IN->next_seq() or die "Could not read first assembly sequence";
@@ -405,7 +415,7 @@ OPTIONS
         print STDERR "$0 $command: ".$s->id.", no targets\n" if $o_verbose;
         $OUT->write_seq($s);
     }
-    print STDERR "$0 $command: $n_applied targets applied to assembly $o_fasta\n" if $o_verbose;
+    print STDERR "$0 $command: $n_applied targets applied to assembly '$o_fasta'\n" if $o_verbose;
 }
 
 sub advance_to_seq($$$) {

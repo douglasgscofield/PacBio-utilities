@@ -48,7 +48,10 @@ pacbio-util indel-targets -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam >
 pacbio-util indel-apply -f pacbio_assembly.fasta -t targets.txt > corrected_assembly.fasta
 ```
 
-Both commands can be combined into a one-line piped command:
+The `indel-apply` command can find the assembly used for determining the
+targets by using the first line of the list of targets.  This provides a useful
+shortcut for combining both commands into a one-line piped command.  The `tee`
+is in place to save the list of targets as they pass through to `indel-apply`.
 
 ```bash
 pacbio-util indel-targets -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam \
@@ -207,9 +210,8 @@ unitig_1	373159	C	113	indel	good	0.9469	1	+1A	107
 ### `pacbio-util indel-apply`
 
 Apply indel targets to correct an assembly.  The corrected assembly is written
-to standard output.  The order of sequences in the assembly and targets must be
-the same.
-
+to standard output.  The order of sequences in the assembly must be the same as
+that in the targets.
 
 ~~~~
 pacbio-util indel-apply [ -f FASTA ] [ -t TARGETS ]
