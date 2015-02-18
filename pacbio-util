@@ -10,14 +10,8 @@ use List::Util qw/sum/;
 use Bio::Seq;
 use Bio::SeqIO;
 
-my $o_mappingquality = 0;
-my $o_mincov = 0;
-my $o_minqual = 0;
-my $o_minqualcov = 0;
-my $o_variantsonly = 0;
-my $o_printbasesquals = 0;
-my $o_noposcheck = 0;
-my $o_help;
+my $o_verbose = 0;
+
 sub print_usage_and_exit($$);
 sub merge_pileup_columns($);
 sub indel_targets();
@@ -27,7 +21,7 @@ sub indel_apply();
 # main loop
 
 my %command_values = ( "indel-targets" => "indel-targets",
-                       "indel-apply" => "indel-apply");
+                       "indel-apply"   => "indel-apply");
 my $command = shift @ARGV;
 
 if (not defined $command or not defined $command_values{$command}) {
@@ -77,19 +71,20 @@ sub merge_pileup_columns($) {
         ++$n_bams;
     }
     if (not $do_merge) {
-        print STDERR "Merging columns from $n_bams BAM files ...\n";
+        print STDERR "Merging columns from $n_bams BAM files ...\n" if $o_verbose;
         $do_merge = 1;
     }
     return ($l->[0], $l->[1], $l->[2], $cvg, $base, $qual, $mapqual);
 }
 
 ################
+# TODO: possibly add a minimum mapping-quality coverage option
 
 sub indel_targets() {
     my $o_fasta;
     my $o_stdin;
     my $o_indelfrac = 0.80;
-    my $o_indelmincov = 5;
+    my $o_indelmincov = 10;
     my $o_includebadindels = 0;
     my $o_maxindelsize = 1000;
     my $o_basequaloffset = 33; # by default, assume Phred+33 quality scores
@@ -101,32 +96,34 @@ sub indel_targets() {
     my $samtools_filterflags = "--ff ".(256 + 1024);  # not primary, is duplicate
     my $o_allbases;
     my $samtools = "samtools";
-
+    my $n_targets = 0;
 
     my $usage = "
-pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
+$0 indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
 
     -f FILE, --fasta FILE    PacBio assembly in Fasta format
 
     FILE1.bam [ FILE2.bam ]  BAM files of reads mapped to
 
-    -                        Read pileup from stdin rather than running samtools
+    -                        Read mpileup from stdin rather than running samtools.
+                             Note that mapping qualities (option `-s`) are expected
+                             in the mpileup input.
 
-    --indel-frac FLOAT       do not report indels at a position if the fraction of 
+    --indel-frac FLOAT       Do not report indels at a position if the fraction of 
                              reads containing them is below FLOAT [default $o_indelfrac]
     --indel-min-cov INT      Minimum read coverage to consider an indel [default $o_indelmincov]
     --include-bad-indels     Include indels in target set that do not pass our criteria,
-                             these lines are marked with 'bad' in the sixth column
+                             these lines are marked 'bad' in the sixth column
     --max-indel-size INT     Maximum indel size to accept, beyond this the position is
                              considered in error [default $o_maxindelsize]
-    --base-qual-offset INT   Offset of base quality ASCII value from 0 quality [default $o_basequaloffset]
-    --samtools FILE          Location of samtools executable [default $samtools]
     --all-reads              Include all reads.  Default is to exclude multiply-mapped
-                             reads (mapQ 0), alignments that are not the primary (SAM
-                             flag 256), and duplicate alignments (flag 1024).
+                             reads (mapQ < $min_mapqual), alignments that are not the primary
+                             (SAM flag 256), and duplicate alignments (flag 1024).
     --all-bases              Include all bases.  Default is to exclude bases below
-                             quality 13.
+                             quality $min_basequal.
+    --samtools FILE          Location of samtools executable [default $samtools]
 
+    --verbose                Print informational messages
     --help, -?               help message
 
 ";
@@ -139,9 +136,10 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
                "include-bad-indels" => \$o_includebadindels,
                "max-indel-size=i"   => \$o_maxindelsize,
                "base-qual-offset=i" => \$o_basequaloffset,
-               "samtools=s"         => \$o_samtools,
                "all-reads"          => \$o_allreads,
                "all-bases"          => \$o_allbases,
+               "samtools=s"         => \$o_samtools,
+               "verbose"            => \$o_verbose,
                "help|?"             => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
     print_usage_and_exit($usage, "") if $o_help;
@@ -164,8 +162,9 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
     $min_basequal = 0 if $o_allbases;
     $samtools_args .= " -Q $min_basequal";
     # open samtools on a pipe
-    my $samtools_pipe = "$samtools mpileup $samtools_args -f $o_fasta ".join(" ", @BAM)." |";
-    print STDERR "pipe: $samtools_pipe\n";
+    my $samtools_pipe = "$samtools mpileup $samtools_args -f $o_fasta ".join(" ", @BAM);
+    $samtools_pipe .= ($o_verbose ? "" : " 2>/dev/null") . " |";
+    print STDERR "pipe: $samtools_pipe\n" if $o_verbose;
     open(PILEUP, $samtools_pipe) or die "Could not initiate samtools pipe: $!";
 
     print STDOUT "#assembly:$o_fasta\n";
@@ -180,13 +179,12 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
             print STDERR "skipping reference deletion '*', should this happen??\n";
             next; # skip indel lines
         }
+        # code modified from https://github.com/douglasgscofield/bioinfo/tree/master/pileVar
         my %indels;
         my %indel_ops;
         my %indel_lengths;
         my $in_reads = 0;
         my $del_reads = 0;
-        my $mincvg_not_met = 1 if $cvg < $o_mincov;
-        my $minqualcvg_not_met = 0;
         my $n_bases;
         if ($base =~ m/[\$\^\+-]/) {
             $base =~ s/\^.//g; #removing the start of the read segement mark
@@ -198,7 +196,8 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
                     print STDERR "line $. indel too big, $indel_len\n";
                     next;
                 }
-                $base =~ s/([\+-]{1}$indel_len.{$indel_len})//; # remove indel info from read base field
+                # remove indel info from read base field
+                $base =~ s/([\+-]{1}$indel_len.{$indel_len})//;
                 my $indel_contents = $1;
                 ++$indels{"indel, $indel_type, $indel_len bases, $indel_contents"};
                 ++$indel_lengths{($indel_type eq "+" ? +$indel_len : -$indel_len)};
@@ -222,96 +221,179 @@ pacbio-util.pl indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
 
         next if not $o_includebadindels and $indel_qual eq "bad";
         my @out;
-        push @out, ($ref, $pos, $refcall, $cvg, "indel-target");
+        push @out, ($ref, $pos, $refcall, $cvg, "indel");
         push @out, $indel_qual;
         push @out, (sprintf "%.4f", $indel_frac_pos);
         push @out, join(",", keys %indel_lengths);
         push @out, join(",", keys %indel_ops);
         push @out, $in_reads + $del_reads;
+        ++$n_targets;
     	print STDOUT join("\t", @out), "\n";
     }
+    print STDERR "$0 $command: $n_targets targets generated for assembly $o_fasta\n" if $o_verbose;
     close PILEUP;
 }
 
 ################
+# TODO: apparently these indels start at the position just after the
+#       indicated position, so this is correct:
+#
+#           $sequence .= $seq->subseq($seq_start, $l[1]);
+#           $seq_start = $l[1] + 1;
+#
+#       and not this:
+#
+#           $sequence .= $seq->subseq($seq_start, $l[1] - 1);
+#           $seq_start = $l[1];
 
-sub find_ref_fasta_seq($);
+sub advance_to_seq($$$);
 
-my $ref_fasta_io;   # SeqIO object for reading assembly
-my $ref_fasta_seq;  # current Seq object from assembly
-
+# One of the things I don't want to do is use Bio::Seq::LargeSeq, as that
+# appears to dump directly to disk, at least in earlier version of BioPerl.
+# Better to just assemble the sequences into a simple string, we should
+# have the RAM, then pack it into Bio::Seq for writing.
 
 sub indel_apply() {
-    print STDERR "you've reached indel_apply\n";
+    my $o_fasta;
+    my $o_targets;
+    my $o_includebadindels = 0;
+    my $o_maxindelsize = 1000;
+    my $o_minindelfrac = 0;
+    my $o_skipdeletionverify = 0;
+    my $o_skipsoftmasked = 0;
+    my $o_help = 0;
+    my $n_applied = 0;
+
     my $usage = "
-pacbio-util.pl indel-apply -f FASTA -t TARGETS
+$0 indel-apply [ -f FASTA ] [ -t TARGETS ]
 
 Correct indels within FASTA by applying TARGETS.  The order of sequences in FASTA
 and targets in TARGETS must be the same.
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for
-                             '$0 indel-targets -f FILE ...'
+                             '$0 indel-targets -f FILE ...'.
+                             If the assembly is not specified, it is determined
+                             from the first line of the target list.
     -t | --targets TARGETS   List of indel targets to apply, output from
                              '$0 indel-targets -f FILE ...'
+                             If no targets are specified, they are read from stdin.
 
+    --include-bad-indels     Apply indels in target set that are marked 'bad'
+    --max-indel-size INT     Maximum indel size to apply [default $o_maxindelsize]
+    --min-indel-frac FLOAT   Minimim indel fraction to apply, a value of 0 means
+                             apply all indels in target set [default $o_minindelfrac]
+    --skip-deletion-verify   Do not verify that a deletion matches the sequence at
+                             that position in the assembly [default $o_skipdeletionverify]
+    --skip-softmasked        Do not apply targets to softmasked regions of the
+                             assembly, as determined by use of lowercase [default $o_skipsoftmasked]
+
+    --verbose                Print informational messages
     --help, -?               help message
 
 ";
 
-    # options for ...
-
-    my $o_fasta;
-    my $o_targets;
-    my $o_stdin;
-
-    print_usage_and_exit($usage, "") if not @ARGV;
-    GetOptions(""          => \$o_stdin,
-               "fasta=s"   => \$o_fasta,
-               "targets=s" => \$o_targets
+    GetOptions("fasta=s"              => \$o_fasta,
+               "targets=s"            => \$o_targets,
+               "include-bad-indels"   => \$o_includebadindels,
+               "max-indel-size=i"     => \$o_maxindelsize,
+               "min-indel-frac=f"     => \$o_minindelfrac,
+               "skip-deletion-verify" => \$o_skipdeletionverify,
+               "verbose"              => \$o_verbose,
+               "help|?"               => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
+    print_usage_and_exit($usage, "") if $o_help;
 
-    open(TARGETS, "<$o_targets") or die "Could not open targets file '$o_targets': $!";
+    # open targets
+    if (not $o_targets) {
+        *TARGETS = *STDIN;
+    } else {
+        open(TARGETS, "<$o_targets") or die "Could not open targets file '$o_targets': $!";
+    }
     my $target_assembly = <TARGETS>;  # first line is '#assembly:filename'
-    die "First line of '$o_targets' does not contain assembly filename" if $target_assembly !~ m/^#assembly:/;
+    die "'$o_targets' does not contain assembly filename" if $target_assembly !~ m/^#assembly:/;
     chomp $target_assembly;
-    $target_assembly = substr($target_assembly, 10);  # remove #assembly:
+    $target_assembly = substr($target_assembly, 10);  # remove '#assembly:' prefix
+    # open assembly
     if (not defined $o_fasta) {
-        print STDERR "Opening target assembly '$target_assembly'\n" if not $o_fasta;
+        print STDERR "$0 $command: Opening target assembly '$target_assembly'\n" if not $o_fasta and $o_verbose;
         $o_fasta = $target_assembly;
     } elsif ($o_fasta ne $target_assembly) {
-        print STDERR "\n*** Warning: -f and target assembly do not match\n\n";
+        print STDERR "\n$0 $command: *** Warning: -f and target assembly do not match\n\n";
     }
-    $ref_fasta_io = Bio::SeqIO->new(-file => "<$o_fasta", -format => "fasta") or 
-                    die "Could not open fasta file '$o_fasta': $!";
+    my $IN = Bio::SeqIO->new(-file => "<$o_fasta", -format => "fasta") or 
+                       die "Could not open assembly file '$o_fasta': $!";
+    my $OUT = Bio::SeqIO->new(-fh => \*STDOUT, -format => "fasta") or 
+                       die "Could not open output: $!";
 
+    my $seq = $IN->next_seq() or die "Could not read first assembly sequence";
+    my $seq_start = 1;  # position in the original seq
+    my $sequence = "";  # for the actual sequence letters
     while (<TARGETS>) {
         next if m/^#/;
         chomp;
-        # ?what is the target line format?
-        # skip 'bad' indels
-        # if the reference sequence is new, write out the previous one
-        # get the indel to apply (generally a single-base insertion, yes?)
-        # apply it to the reference sequence
+        my @l = split /\t/;
+        next if $l[5] eq "bad" and not $o_includebadindels;
+        next if $l[6] < $o_minindelfrac;
+        next if abs($l[7]) > $o_maxindelsize;
+        # we now know we are going to apply this indel
+        if ($l[0] ne $seq->id) {
+            # wrap up the old sequence, move to a new seq
+            $sequence .= $seq->subseq($seq_start, $seq->length());
+            $seq->seq($sequence);
+            $OUT->write_seq($seq);
+            $seq = advance_to_seq($IN, $l[0], $OUT) or die "no assembly sequence '$l[0]'";
+            # initiate sequence
+            $sequence = "";
+            $seq_start = 1;
+        }
+        die "pos mismatch ".$seq->id.": seq_start $seq_start > target $l[1]" if $seq_start > $l[1];
+        # update sequence
+        $sequence .= $seq->subseq($seq_start, $l[1]);
+        $seq_start = $l[1] + 1;
+        # if skipping softmasked regions, if this is softmasked just go to the next target
+        my $base = $seq->subseq($seq_start, $seq_start);
+        next if $o_skipsoftmasked and $base ne lc $base;
+        # apply the indel, is it insertion or deletion?
+        my $sign = $l[7] <=> 0;
+        my $size = abs($l[7]);
+        my $indel = substr($l[8], 1 + length($size)); # remove string '+n' or '-n'
+        if ($sign < 0) {
+            # we need to delete from the assembly
+            if (not $o_skipdeletionverify) {  # verify seq mathces
+                my $del = $seq->subseq($seq_start, $seq_start + $size - 1);
+                if ($indel ne uc($del)) {
+                    die "deletion '$indel' mismatch vs assembly ".$seq->id.":$seq_start, '$del'";
+                }
+            }
+            $seq_start += $size;
+        } elsif ($sign > 0) {
+            # we need to insert into the assembly
+            $sequence .= $indel;
+        } else {
+            die "indel sign is 0 at target line $.";
+        }
+        ++$n_applied;
     }
-    # write out the reference sequence
+    # wrap up final sequences
+    $sequence .= $seq->subseq($seq_start, $seq->length());
+    $seq->seq($sequence);
+    $OUT->write_seq($seq);
+    while (my $s = $IN->next_seq()) {
+        print STDERR "$0 $command: ".$s->id.", no targets\n" if $o_verbose;
+        $OUT->write_seq($s);
+    }
+    print STDERR "$0 $command: $n_applied targets applied to assembly $o_fasta\n" if $o_verbose;
 }
 
-sub find_ref_fasta_seq($) {
-    # read fasta sequences until we load the requested one
-    my $seq_name_to_find = shift;
-    # if we return below, then we are already at the sequence of interest
-    if (defined($ref_fasta_seq) and $ref_fasta_seq->id eq $seq_name_to_find) {
-        #print STDERR "find_ref_fasta_seq: we are already at the reference sequence $seq_name_to_find\n";
-        return;
+sub advance_to_seq($$$) {
+    # if we skip a sequence, output it in its entirety, it has no targets
+    my ($seqio, $seq_name, $seqout) = @_;
+    while (my $s = $seqio->next_seq()) {
+        return $s if $s->id eq $seq_name;
+        print STDERR "$0 $command: ".$s->id.", no targets\n" if $o_verbose;
+        $seqout->write_seq($s);
     }
-    while (my $s = $ref_fasta_io->next_seq()) {
-        if ($s->id eq $seq_name_to_find) {
-            $ref_fasta_seq = $s;
-            #print STDERR "find_ref_fasta_seq: found new reference sequence $seq_name_to_find\n";
-            return;
-        }
-    }
-    die("couldn't find reference $seq_name_to_find");
+    return 0;
 }
 
