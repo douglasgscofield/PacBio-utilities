@@ -59,13 +59,35 @@ pacbio-util indel-targets -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam \
 Here is example tool output (with `-v`) and scaffold size results before and
 after correction.
 
-~~~~
-$ pacbio-util indel-targets -v -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam | tee targets.txt | pacbio-util indel-apply > corrected_assembly.fasta
+```bash
+$ pacbio-util indel-targets -v -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam | tee targets.txt | pacbio-util indel-apply -v > corrected_assembly.fasta
 pipe: samtools mpileup -s -B -d 10000 -L 10000 --ff 1280 -q 1 -Q 13 -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam |
 [mpileup] 2 samples in 2 input files
 Merging columns from 2 BAM files ...
 pacbio-util indel-targets: 1281 targets generated for assembly pacbio_assembly.fasta
-~~~~
+pacbio-util indel-apply: Opening target assembly 'pacbio_assembly.fasta'
+pacbio-util indel-apply: unitig_7|quiver, no targets
+pacbio-util indel-apply: unitig_52|quiver, no targets
+pacbio-util indel-apply: unitig_46|quiver, no targets
+pacbio-util indel-apply: unitig_14|quiver, no targets
+pacbio-util indel-apply: unitig_54|quiver, no targets
+pacbio-util indel-apply: unitig_44|quiver, no targets
+pacbio-util indel-apply: unitig_13|quiver, no targets
+pacbio-util indel-apply: unitig_56|quiver, no targets
+pacbio-util indel-apply: unitig_55|quiver, no targets
+pacbio-util indel-apply: unitig_43|quiver, no targets
+pacbio-util indel-apply: unitig_48|quiver, no targets
+pacbio-util indel-apply: unitig_45|quiver, no targets
+pacbio-util indel-apply: unitig_15|quiver, no targets
+pacbio-util indel-apply: unitig_47|quiver, no targets
+pacbio-util indel-apply: unitig_60|quiver, no targets
+pacbio-util indel-apply: unitig_61|quiver, no targets
+pacbio-util indel-apply: unitig_51|quiver, no targets
+pacbio-util indel-apply: unitig_59|quiver, no targets
+pacbio-util indel-apply: unitig_4|quiver, no targets
+pacbio-util indel-apply: 1281 targets applied to assembly pacbio_assembly.fasta
+$
+```
 
 Scaffold | bp before | bp after
 ---- | ---- | ----
