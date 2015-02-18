@@ -183,7 +183,7 @@ OPTIONS
     # open samtools on a pipe
     my $samtools_pipe = "$samtools mpileup $samtools_args -f $o_fasta ".join(" ", @BAM);
     $samtools_pipe .= ($o_verbose ? "" : " 2>/dev/null") . " |";
-    print STDERR "pipe: $samtools_pipe\n" if $o_verbose;
+    print STDERR "samtools pipe command: '$samtools_pipe'\n" if $o_verbose;
     open(PILEUP, $samtools_pipe) or die "Could not initiate samtools pipe: $!";
 
     print STDOUT "#assembly:$o_fasta\n";

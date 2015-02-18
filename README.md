@@ -59,9 +59,9 @@ pacbio-util indel-targets -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam \
 Here is example tool output (with `-v`) and scaffold size results before and
 after correction.
 
-```bash
+~~~~
 $ pacbio-util indel-targets -v -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam | tee targets.txt | pacbio-util indel-apply -v > corrected_assembly.fasta
-pipe: samtools mpileup -s -B -d 10000 -L 10000 --ff 1280 -q 1 -Q 13 -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam |
+samtools pipe command: 'samtools mpileup -s -B -d 10000 -L 10000 --ff 1280 -q 1 -Q 13 -f pacbio_assembly.fasta pe.sorted.bam se.sorted.bam |'
 [mpileup] 2 samples in 2 input files
 Merging columns from 2 BAM files ...
 pacbio-util indel-targets: 1281 targets generated for assembly pacbio_assembly.fasta
@@ -87,7 +87,7 @@ pacbio-util indel-apply: unitig_59|quiver, no targets
 pacbio-util indel-apply: unitig_4|quiver, no targets
 pacbio-util indel-apply: 1281 targets applied to assembly pacbio_assembly.fasta
 $
-```
+~~~~
 
 Scaffold | bp before | bp after
 ---- | ---- | ----
