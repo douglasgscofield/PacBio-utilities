@@ -66,25 +66,25 @@ samtools pipe command: 'samtools mpileup -s -B -d 10000 -L 10000 --ff 1280 -q 1 
 Merging columns from 2 BAM files ...
 pacbio-util indel-targets: 1281 targets generated for assembly pacbio_assembly.fasta
 pacbio-util indel-apply: Opening target assembly 'pacbio_assembly.fasta'
-pacbio-util indel-apply: unitig_7|quiver, no targets
-pacbio-util indel-apply: unitig_52|quiver, no targets
-pacbio-util indel-apply: unitig_46|quiver, no targets
-pacbio-util indel-apply: unitig_14|quiver, no targets
-pacbio-util indel-apply: unitig_54|quiver, no targets
-pacbio-util indel-apply: unitig_44|quiver, no targets
-pacbio-util indel-apply: unitig_13|quiver, no targets
-pacbio-util indel-apply: unitig_56|quiver, no targets
-pacbio-util indel-apply: unitig_55|quiver, no targets
-pacbio-util indel-apply: unitig_43|quiver, no targets
-pacbio-util indel-apply: unitig_48|quiver, no targets
-pacbio-util indel-apply: unitig_45|quiver, no targets
-pacbio-util indel-apply: unitig_15|quiver, no targets
-pacbio-util indel-apply: unitig_47|quiver, no targets
-pacbio-util indel-apply: unitig_60|quiver, no targets
-pacbio-util indel-apply: unitig_61|quiver, no targets
-pacbio-util indel-apply: unitig_51|quiver, no targets
-pacbio-util indel-apply: unitig_59|quiver, no targets
-pacbio-util indel-apply: unitig_4|quiver, no targets
+pacbio-util indel-apply: unitig_7, no targets
+pacbio-util indel-apply: unitig_52, no targets
+pacbio-util indel-apply: unitig_46, no targets
+pacbio-util indel-apply: unitig_14, no targets
+pacbio-util indel-apply: unitig_54, no targets
+pacbio-util indel-apply: unitig_44, no targets
+pacbio-util indel-apply: unitig_13, no targets
+pacbio-util indel-apply: unitig_56, no targets
+pacbio-util indel-apply: unitig_55, no targets
+pacbio-util indel-apply: unitig_43, no targets
+pacbio-util indel-apply: unitig_48, no targets
+pacbio-util indel-apply: unitig_45, no targets
+pacbio-util indel-apply: unitig_15, no targets
+pacbio-util indel-apply: unitig_47, no targets
+pacbio-util indel-apply: unitig_60, no targets
+pacbio-util indel-apply: unitig_61, no targets
+pacbio-util indel-apply: unitig_51, no targets
+pacbio-util indel-apply: unitig_59, no targets
+pacbio-util indel-apply: unitig_4, no targets
 pacbio-util indel-apply: 1281 targets applied to assembly pacbio_assembly.fasta
 $
 ~~~~
