@@ -59,7 +59,7 @@ sub merge_pileup_columns($) {
     # if coverage is 0 *and* the next two are '*', then there are only
     # three columns.  if the *and* is not true, then reads have been
     # removed because of flags, and there are 4 columns of output
-    my $l = shift;
+    my $l = shift;  # reference to array of pileup columns
     my ($cvg, $base, $qual, $mapqual) = ( 0, "", "", "" );
     my ($n_cols, $n_bams) = ( scalar(@$l), 0 );
     my $i = 3; # start at 4th column (coverage)
@@ -299,8 +299,6 @@ sub indel_apply() {
     my $o_fasta;
     my $o_targets;
     my $o_includebadindels = 0;
-    my $o_maxindelsize = 1000;
-    my $o_minindelfrac = 0;
     my $o_skipdeletionverify = 0;
     my $o_skipsoftmasked = 0;
     my $o_help = 0;
@@ -324,10 +322,7 @@ OPTIONS
                              from '$0 indel-targets -f FILE ...'.  If no
                              targets are specified, they are read from stdin.
 
-    --include-bad-indels     Apply indels in target set that are marked 'bad'
-    --max-indel-size INT     Maximum indel size to apply [default $o_maxindelsize]
-    --min-indel-frac FLOAT   Minimim indel fraction to apply, a value of 0
-                             means apply all indels in target set [default $o_minindelfrac]
+    --include-bad-indels     Apply indels in target set that are marked 'bad'.
     --skip-deletion-verify   Do not verify that a deletion matches the
                              sequence at that position in the assembly
                              [default $o_skipdeletionverify]
@@ -343,8 +338,6 @@ OPTIONS
     GetOptions("fasta=s"              => \$o_fasta,
                "targets=s"            => \$o_targets,
                "include-bad-indels"   => \$o_includebadindels,
-               "max-indel-size=i"     => \$o_maxindelsize,
-               "min-indel-frac=f"     => \$o_minindelfrac,
                "skip-deletion-verify" => \$o_skipdeletionverify,
                "verbose"              => \$o_verbose,
                "help|?"               => \$o_help
@@ -381,8 +374,6 @@ OPTIONS
         chomp;
         my @l = split /\t/;
         next if $l[5] eq "bad" and not $o_includebadindels;
-        next if $l[6] < $o_minindelfrac;
-        next if abs($l[7]) > $o_maxindelsize;
         # we now know we are going to apply this indel
         if ($l[0] ne $seq->id) {
             # wrap up the old sequence, move to a new seq
@@ -407,7 +398,7 @@ OPTIONS
         my $indel = substr($l[8], 1 + length($size)); # remove string '+n' or '-n'
         if ($sign < 0) {
             # we need to delete from the assembly
-            if (not $o_skipdeletionverify) {  # verify seq mathces
+            if (not $o_skipdeletionverify) {  # verify deletion sequence matches
                 my $del = $seq->subseq($seq_start, $seq_start + $size - 1);
                 if ($indel ne uc($del)) {
                     die "deletion '$indel' mismatch vs assembly ".$seq->id.":$seq_start, '$del'";
@@ -435,8 +426,8 @@ OPTIONS
 
 sub advance_to_seq($$$) {
     # if we skip a sequence, output it in its entirety, it has no targets
-    my ($seqio, $seq_name, $seqout) = @_;
-    while (my $s = $seqio->next_seq()) {
+    my ($seqin, $seq_name, $seqout) = @_;
+    while (my $s = $seqin->next_seq()) {
         return $s if $s->id eq $seq_name;
         print STDERR "$0 $command: ".$s->id.", no targets\n" if $o_verbose;
         $seqout->write_seq($s);
