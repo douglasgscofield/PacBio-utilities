@@ -146,26 +146,35 @@ OPTIONS
 
     FILE1.bam [ FILE2.bam ]  BAM files of reads mapped to
 
-    -                        Read mpileup from stdin rather than running samtools.
-                             Note that mapping qualities (option `-s`) are expected
-                             in the mpileup input.
+    -                        Read mpileup from stdin rather than running
+                             samtools. Note that mapping qualities
+                             (option `-s`) are expected in the mpileup input.
 
-    --indel-frac FLOAT       Do not report indels at a position if the fraction of
-                             reads containing them is below FLOAT [default 0.8]
-    --indel-min-cov INT      Minimum read coverage to consider an indel [default 10]
-    --include-bad-indels     Include indels in target set that do not pass our criteria,
-                             these lines are marked 'bad' in the sixth column
-    --max-indel-size INT     Maximum indel size to accept, beyond this the position is
-                             considered in error [default 1000]
-    --all-reads              Include all reads.  Default is to exclude multiply-mapped
-                             reads (mapQ < 1), alignments that are not the primary
-                             (SAM flag 256), and duplicate alignments (flag 1024).
-    --all-bases              Include all bases.  Default is to exclude bases below
-                             quality 13.
-    --samtools FILE          Location of samtools executable [default samtools]
+    --indel-frac FLOAT       Do not report indels at a position if the
+                             fraction of reads containing them is below FLOAT
+                             [default 0.8]
+    --indel-min-cov INT      Minimum read coverage to consider an indel
+                             [default 10]
+    --include-bad-indels     Include indels in target set that do not pass
+                             our criteria, these lines are marked 'bad' in
+                             the sixth column
+    --max-indel-size INT     Maximum indel size to accept, beyond this the
+                             position is considered in error [default 1000]
+    --mapping-quality FLOAT  Minimum mean mapping quality of reads covering a
+                             target site. Note that a value of 0 means no
+                             minimum applied; reads with 0 mapQ are still
+                             excluded by default (see --all-reads) [default 0]
+    --all-reads              Include all reads.  Default is to exclude
+                             multiply-mapped reads (mapQ < 1), alignments
+                             that are not the primary (SAM flag 256), and
+                             duplicate alignments (flag 1024).
+    --all-bases              Include all bases.  Default is to exclude bases
+                             below quality 13.
+    --samtools FILE          Location of samtools executable
+                             [default samtools]
 
+    --verbose                Print informational messages
     --help, -?               help message
-
 ~~~~
 
 Below is an example subset of targets generated with this command.  The first
@@ -175,35 +184,35 @@ target position, reference base, total read coverage, type of target (always
 `indel` for this command), whether the target passed quality criteria (`good`
 or `bad`), the frequency of coverage supporting the indel, the size of the
 indel (positive for insertion, negative for deletion), a string describing the
-indel size and sequence, and the number of reads supporting the indel.
+indel size and sequence, the number of reads supporting the indel, and the mean
+mapping quality of reads.
 
 ~~~~
 #assembly:pacbio_assembly.fasta
-unitig_1	101522	C	72	indel	good	0.9444	1	+1A	68
-unitig_1	119319	G	127	indel	good	0.8110	1	+1A	103
-unitig_1	120891	A	104	indel	good	0.9231	1	+1T	96
-unitig_1	122801	A	93	indel	good	0.9032	1	+1C	84
-unitig_1	125303	G	84	indel	good	0.9286	1	+1A	78
-unitig_1	131734	T	67	indel	good	0.8657	1	+1A	58
-unitig_1	136434	A	28	indel	good	0.8214	1	+1C	23
-unitig_1	170949	A	40	indel	good	0.9500	1	+1G	38
-unitig_1	171182	A	80	indel	good	0.9500	1	+1G	76
-unitig_1	172016	A	67	indel	good	0.9403	1	+1C	63
-unitig_1	190068	A	18	indel	good	1.0000	1	+1G	18
-unitig_1	190154	T	11	indel	good	0.9091	1	+1G	10
-unitig_1	191027	C	104	indel	good	0.9231	1	+1G	96
-unitig_1	191173	C	96	indel	good	0.9167	1	+1T	88
-unitig_1	230981	T	63	indel	good	0.9683	1	+1C	61
-unitig_1	270949	G	100	indel	good	0.9800	1	+1C	98
-unitig_1	307836	A	38	indel	good	0.8947	1	+1C	34
-unitig_1	310152	C	105	indel	good	0.8857	1	+1A	93
-unitig_1	326536	G	105	indel	good	0.9143	1	+1A	96
-unitig_1	343612	G	10	indel	good	0.9000	-6	-6TTTTGT	9
-unitig_1	360786	G	39	indel	good	0.8205	1	+1A	32
-unitig_1	369367	C	98	indel	good	0.9592	1	+1A	94
-unitig_1	371657	T	48	indel	good	0.9375	1	+1G	45
-unitig_1	371776	G	43	indel	good	1.0000	1	+1T	43
-unitig_1	373159	C	113	indel	good	0.9469	1	+1A	107
+unitig_1	101522	C	72	indel	good	0.9444	1	+1A	68	60
+unitig_1	119319	G	127	indel	good	0.8110	1	+1A	103	60
+unitig_1	120891	A	104	indel	good	0.9231	1	+1T	96	60
+unitig_1	122801	A	93	indel	good	0.9032	1	+1C	84	60
+unitig_1	125303	G	84	indel	good	0.9286	1	+1A	78	60
+unitig_1	131734	T	67	indel	good	0.8657	1	+1A	58	60
+unitig_1	136434	A	28	indel	good	0.8214	1	+1C	23	60
+unitig_1	170949	A	40	indel	good	0.9500	1	+1G	38	60
+unitig_1	171182	A	80	indel	good	0.9500	1	+1G	76	60
+unitig_1	172016	A	67	indel	good	0.9403	1	+1C	63	60
+unitig_1	190068	A	18	indel	good	1.0000	1	+1G	18	60
+unitig_1	190154	T	11	indel	good	0.9091	1	+1G	10	60
+unitig_1	191027	C	104	indel	good	0.9231	1	+1G	96	60
+unitig_1	191173	C	96	indel	good	0.9167	1	+1T	88	60
+unitig_1	230981	T	63	indel	good	0.9683	1	+1C	61	60
+unitig_1	270949	G	100	indel	good	0.9800	1	+1C	98	60
+unitig_1	307836	A	38	indel	good	0.8947	1	+1C	34	60
+unitig_1	310152	C	105	indel	good	0.8857	1	+1A	93	60
+unitig_1	326536	G	105	indel	good	0.9143	1	+1A	96	60
+unitig_1	360786	G	39	indel	good	0.8205	1	+1A	32	58.5
+unitig_1	369367	C	98	indel	good	0.9592	1	+1A	94	60
+unitig_1	371657	T	48	indel	good	0.9375	1	+1G	45	60
+unitig_1	371776	G	43	indel	good	1.0000	1	+1T	43	60
+unitig_1	373159	C	113	indel	good	0.9469	1	+1A	107	60
 ~~~~
 
 
@@ -220,22 +229,25 @@ OPTIONS
 
     -f | --fasta FILE        PacBio assembly in Fasta format, to be corrected.
                              Must be the same assembly used for
-                             'pacbio-util indel-targets.
+                             './pacbio-util indel-targets'.
                              If the assembly is not specified, it is determined
                              from the first line of the target list.
-    -t | --targets TARGETS   List of indel targets to apply, standard output from
-                             'pacbio-util indel-targets -f FILE ...'
-                             If no targets are specified, they are read from stdin.
+    -t | --targets TARGETS   List of indel targets to apply, standard output
+                             from './pacbio-util indel-targets -f FILE ...'.  If no
+                             targets are specified, they are read from stdin.
 
     --include-bad-indels     Apply indels in target set that are marked 'bad'
     --max-indel-size INT     Maximum indel size to apply [default 1000]
-    --min-indel-frac FLOAT   Minimim indel fraction to apply, a value of 0 means
-                             apply all indels in target set [default 0]
-    --skip-deletion-verify   Do not verify that a deletion matches the sequence at
-                             that position in the assembly [default 0]
+    --min-indel-frac FLOAT   Minimim indel fraction to apply, a value of 0
+                             means apply all indels in target set [default 0]
+    --skip-deletion-verify   Do not verify that a deletion matches the
+                             sequence at that position in the assembly
+                             [default 0]
     --skip-softmasked        Do not apply targets to softmasked regions of the
-                             assembly, as determined by use of lowercase [default 0]
+                             assembly, as determined by use of lowercase
+                             [default 0]
 
+    --verbose                Print informational messages
     --help, -?               help message
 ~~~~
 

@@ -11,6 +11,7 @@
 use strict;
 use warnings;
 # base modules
+use POSIX;
 use Getopt::Long;
 # BioPerl modules
 use Bio::Seq;
@@ -220,6 +221,7 @@ OPTIONS
         my %indel_lengths;
         my $in_reads = 0;
         my $del_reads = 0;
+        my $mean_mapQ = 0;
         my $n_bases;
         if ($base =~ m/[\$\^\+-]/) {
             $base =~ s/\^.//g; #removing the start of the read segement mark
@@ -242,11 +244,10 @@ OPTIONS
             }
             $n_bases = length($base);
             die "n bases $n_bases != number of base qualities" if $n_bases != length($qual);
-            if ($o_mappingquality > 0) { # filter on mean mapping quality
-                my $qsum = 0;
-                map { $qsum += (ord($_) - $mapQ_base) } split //, $mapqual;
-                next if ($qsum / length($mapqual)) < $o_mappingquality;
-            }
+            my $qsum = 0;
+            map { $qsum += (ord($_) - $mapQ_base) } split //, $mapqual;
+            $mean_mapQ = sprintf("%.1f", $qsum / length($mapqual)) + 0.0;
+            next if $o_mappingquality and $mean_mapQ < $o_mappingquality;
         }
         my $indel_reads = $in_reads + $del_reads;
         next if $indel_reads == 0;  # no indel
@@ -264,6 +265,7 @@ OPTIONS
         push @out, join(",", keys %indel_lengths);
         push @out, join(",", keys %indel_ops);
         push @out, $in_reads + $del_reads;
+        push @out, $mean_mapQ;
         ++$n_targets;
     	print STDOUT join("\t", @out), "\n";
     }
