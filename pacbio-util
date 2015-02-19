@@ -123,8 +123,8 @@ scaffold name, target position, reference base, total read coverage, type of
 target (always 'indel' for this command), whether the target passed quality
 criteria (`good` or `bad`), the frequency of coverage supporting the indel, the
 size of the indel (positive for insertion, negative for deletion), a string
-describing the indel size and sequence, and the number of reads supporting the
-indel.
+describing the indel size and sequence, the number of reads supporting the
+indel, and the mean mapping quality of reads.
 
 OPTIONS
 
