@@ -1,6 +1,8 @@
 TODO
 ====
 
+o Add naive and model modes.  Naive mode does simple filtering, like we already do.  Model mode applies a probabilistic model.
+o Analyse the targets files for the permissive and default runs
 o Should I include the pieces of BioPerl I use? How do I get a list of the exact modules I use, to help with the above?
 o Combine indel-targets and indel-apply?
 x Decided (for now) not to use Bio::DB::Sam or another interface.

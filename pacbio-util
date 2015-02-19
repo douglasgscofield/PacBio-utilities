@@ -90,6 +90,8 @@ sub merge_pileup_columns($) {
 sub indel_targets() {
     my $o_fasta;
     my $o_stdin;
+    my %mode_values = ( "naive" => "naive", "model" => "model");
+    my $o_mode = "naive";
     my $o_indelfrac = 0.80;
     my $o_indelmincov = 10;
     my $o_includebadindels = 0;
@@ -136,6 +138,12 @@ OPTIONS
                              samtools. Note that mapping qualities
                              (option `-s`) are expected in the mpileup input.
 
+    --mode model | naive     Determine indel targets using a probabilistic
+                             model (not yet implemented!) or naive filtering,
+                             which is what we currently do.
+
+    NAIVE-MODE OPTIONS
+
     --indel-frac FLOAT       Do not report indels at a position if the
                              fraction of reads containing them is below FLOAT
                              [default $o_indelfrac]
@@ -156,9 +164,13 @@ OPTIONS
                              duplicate alignments (flag 1024).
     --all-bases              Include all bases.  Default is to exclude bases
                              below quality $min_basequal.
+
+    GENERAL OPTIONS
+
+    --summary                Produce an informational summary to standard
+                             error at the end of execution.
     --samtools FILE          Location of samtools executable
                              [default $samtools]
-
     --verbose                Print informational messages
     --help, -?               help message
 
@@ -179,6 +191,8 @@ OPTIONS
                "help|?"             => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
     print_usage_and_exit($usage, "") if $o_help;
+    die "unknown --mode" if not defined($mode_values{lc($o_mode)});
+    $o_mode = $mode_values{lc($o_mode)};
     my @BAM = grep { -f or die "cannot find BAM: $_" } @ARGV;
     my $n_BAM = scalar(@BAM);
 
