@@ -85,7 +85,6 @@ sub merge_pileup_columns($) {
 }
 
 ################
-# TODO: possibly add a minimum mapping-quality coverage option
 
 sub indel_targets() {
     my $o_fasta;
