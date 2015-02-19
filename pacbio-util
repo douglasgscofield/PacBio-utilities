@@ -89,8 +89,8 @@ sub merge_pileup_columns($) {
 sub indel_targets() {
     my $o_fasta;
     my $o_stdin;
-    my %mode_values = ( "naive" => "naive", "model" => "model");
-    my $o_mode = "naive";
+    my %mode_values = ( "filter" => "filter", "model" => "model");
+    my $o_mode = "filter";
     my $o_indelfrac = 0.80;
     my $o_indelmincov = 10;
     my $o_includebadindels = 0;
@@ -137,7 +137,7 @@ OPTIONS
                              samtools. Note that mapping qualities
                              (option `-s`) are expected in the mpileup input.
 
-    --mode model | naive     Determine indel targets using a probabilistic
+    --mode model | filter    Determine indel targets using a probabilistic
                              model (not yet implemented!) or naive filtering,
                              which is what we currently do.
 
