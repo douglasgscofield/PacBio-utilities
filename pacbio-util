@@ -70,8 +70,14 @@ sub merge_pileup_columns($) {
             $qual    .= $l->[$i + 2];
             $mapqual .= $l->[$i + 3];
             $i += 4;
-        } elsif ($l->[$i] == 0 and $l->[$i + 1] eq '*' and $l->[$i + 2] eq '*') {  # coverage 0, 3 columns
-            $i += 3;
+        } elsif ($l->[$i] == 0 and $l->[$i + 1] eq '*' and $l->[$i + 2] eq '*') {
+            if ($l->[$i + 3] eq '*') {
+                # samtools 1.0+
+                $i += 4;
+            } else {
+                # pre-samtools 1.0, this was a bug, with coverage 0 there are just 3 columns
+                $i += 3;
+            }
         } else {  # coverage 0 but 4 columns
             $i += 4;
         }
