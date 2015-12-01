@@ -3,7 +3,7 @@ PacBio-utilities
 
 A collection of scripts useful for working with PacBio-based assemblies.
 
-The `pacbio-util` script requires [`BioPerl`][BioPerl] and [`samtools`][samtools].
+The `pacbio-util` script requires [`BioPerl`][BioPerl] and [`samtools`][samtools] >= 0.1.19.
 
 [BioPerl]:  http://www.bioperl.org/
 [samtools]: http://www.htslib.org/

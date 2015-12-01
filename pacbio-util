@@ -7,6 +7,15 @@
 # the Gnu General Public License v2.  See LICENSE.
 #
 # Please send bugs, suggestions etc.
+#
+# Note: samtools >= 0.1.19 required for its --ff flag
+#
+# Changelog:
+#
+# 0.2 : added check of samtools version (20151201)
+# initial version unversioned
+
+use constant VERSION => '0.2';
 
 use strict;
 use warnings;
@@ -34,6 +43,7 @@ my $command = shift @ARGV;
 if (not defined $command or not defined $command_values{$command}) {
     print STDERR "$0 indel-targets ...\n";
     print STDERR "$0 indel-apply ...\n";
+    print STDERR "\nVersion: ".VERSION."\n";
     exit 0;
 } elsif ($command eq "indel-targets") {
     indel_targets();
@@ -93,7 +103,7 @@ sub merge_pileup_columns($) {
 ################
 
 sub indel_targets() {
-    my $o_fasta;
+    my $o_fasta = "";
     my $o_stdin;
     my %mode_values = ( "filter" => "filter", "model" => "model");
     my $o_mode = "filter";
@@ -116,7 +126,9 @@ sub indel_targets() {
     my $usage = "
 $0 indel-targets -f FASTA FILE1.bam [ FILE2.bam ... ]
 
-Generate indel targets for correction.  Uses samtools for indel detection.
+Version: ".VERSION."
+
+Generats indel targets for correction.  Uses samtools for indel detection.
 Targets are written to standard output.
 
 Targets will only be generated where all read mappings containing an indel
@@ -196,19 +208,22 @@ OPTIONS
                "help|?"             => \$o_help
     ) or print_usage_and_exit($usage, "unknown option");
     print_usage_and_exit($usage, "") if $o_help;
+
+    # find samtools and check version
+    $samtools = $o_samtools if $o_samtools;
+    my $t = qx/$samtools 2>&1/;
+    die "cannot execute '$samtools'" if not defined $t;
+    $t =~ m/Version: ([0-9.]+)/;  # finds version string containing just numbers and '.'
+    $t = $1;
+    #print STDERR "Version of samtools determined to be '$t'\n";
+    die "$samtools version ($t) too low, must be >= 0.1.19" if $t =~ m/^0\./ and $t ne '0.1.19';
+
     die "unknown --mode" if not defined($mode_values{lc($o_mode)});
     $o_mode = $mode_values{lc($o_mode)};
+    -f $o_fasta or die "cannot find reference file: $o_fasta";
     my @BAM = grep { -f or die "cannot find BAM: $_" } @ARGV;
     my $n_BAM = scalar(@BAM);
 
-    # find samtools
-    if ($o_samtools) {
-        die "cannot execute '$o_samtools'" if not -x $o_samtools;
-        $samtools = $o_samtools;
-    } else {
-        my $t = qx/$samtools 2>&1/;
-        die "cannot execute '$samtools'" if not defined $t;
-    }
     # set up samtools argument list
     my $samtools_args = "-s -B -d 10000 -L 10000";
     $samtools_args .= " $samtools_filterflags" if not $o_allreads;
@@ -312,6 +327,8 @@ sub indel_apply() {
 
     my $usage = "
 $0 indel-apply [ -f FASTA ] [ -t TARGETS ]
+
+Version: ".VERSION."
 
 Apply indel targets to correct an assembly.  The corrected assembly is written
 to standard output.  The order of sequences in the assembly and targets must be
