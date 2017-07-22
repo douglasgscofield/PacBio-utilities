@@ -244,7 +244,7 @@ OPTIONS
         chomp;
         my @l = split /\t/;
         my ($ref, $pos, $refcall, $cvg, $base, $qual, $mapqual) = merge_pileup_columns(\@l);
-        die "Coverage contains non-numeric values: $cvg" if not isdigit($cvg);
+        die "Coverage contains non-numeric values: $cvg" if $cvg !~ /^[[:digit:]]$/;
         if ($refcall eq "*") {
             print STDERR "skipping reference deletion '*', should this happen??\n";
             next; # skip indel lines
